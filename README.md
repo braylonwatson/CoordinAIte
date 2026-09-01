@@ -15,3 +15,26 @@ From a technical standpoint, CoordinAIte is built using a modern full-stack arch
 Looking forward, the project is designed with scalability and monetization in mind. The planned business model follows a freemium structure, where the current run/pass prediction functionality remains free, while advanced features such as play concept classification and directional prediction (left/right) are introduced in a paid subscription tier. This approach allows users to experience the core value of the product while creating a clear incentive to upgrade for deeper insights. Future expansions may include team-level subscriptions, opponent scouting reports, and enhanced analytics dashboards tailored for coaching staff and organizations.
 
 Ultimately, CoordinAIte represents a step toward integrating artificial intelligence into real-time sports decision-making. By combining machine learning, live data tracking, and strategic recommendations, the platform aims to bridge the gap between analytics and on-field execution. The long-term vision is to evolve into a comprehensive defensive coordination assistant that not only predicts plays but also provides fully contextualized game strategies, empowering coaches to make smarter, faster, and more confident decisions.
+
+## Production backend rebuild
+
+The live API is now stateless: immutable XGBoost models are loaded once per API
+process, while every game's mutable tracker state is persisted in PostgreSQL.
+This allows Render to run multiple API instances without users sharing or losing
+game state.
+
+- [Architecture and design decisions](docs/architecture.md)
+- [Database migration instructions](docs/database-migration.md)
+
+### Backend development
+
+```powershell
+cd backend
+python -m pip install -r requirements-dev.txt
+python -m alembic -c alembic.ini upgrade head
+python -m pytest -q
+python -m uvicorn main:app --reload
+```
+
+Copy `.env.example` to `.env` and replace its example values locally. Never
+commit `.env`.

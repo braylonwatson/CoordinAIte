@@ -1,3 +1,7 @@
+from copy import deepcopy
+from dataclasses import dataclass
+from typing import Any
+
 import joblib
 import pandas as pd
 from pathlib import Path
@@ -27,6 +31,62 @@ def load_optional_model_bundle(model_filename: str, columns_filename: str):
         return None, None
 
     return _load_pickle(model_filename), _load_pickle(columns_filename)
+
+
+@dataclass(frozen=True)
+class ModelBundle:
+    """Immutable model references that can be shared by every request."""
+
+    model: Any
+    model_columns: list[str]
+    direction_model: Any | None = None
+    direction_model_columns: list[str] | None = None
+    run_concept_model: Any | None = None
+    run_concept_model_columns: list[str] | None = None
+    pass_concept_model: Any | None = None
+    pass_concept_model_columns: list[str] | None = None
+
+    @classmethod
+    def load(cls) -> "ModelBundle":
+        model, model_columns = load_model_bundle(
+            "play_predictor_model.pkl",
+            "model_columns.pkl",
+        )
+        direction_model, direction_columns = load_optional_model_bundle(
+            "direction_predictor_model.pkl",
+            "direction_model_columns.pkl",
+        )
+        run_model, run_columns = load_optional_model_bundle(
+            "run_concept_predictor_model.pkl",
+            "run_concept_model_columns.pkl",
+        )
+        pass_model, pass_columns = load_optional_model_bundle(
+            "pass_concept_predictor_model.pkl",
+            "pass_concept_model_columns.pkl",
+        )
+        return cls(
+            model=model,
+            model_columns=model_columns,
+            direction_model=direction_model,
+            direction_model_columns=direction_columns,
+            run_concept_model=run_model,
+            run_concept_model_columns=run_columns,
+            pass_concept_model=pass_model,
+            pass_concept_model_columns=pass_columns,
+        )
+
+    def tier2_available(self) -> bool:
+        return all(
+            value is not None
+            for value in (
+                self.direction_model,
+                self.direction_model_columns,
+                self.run_concept_model,
+                self.run_concept_model_columns,
+                self.pass_concept_model,
+                self.pass_concept_model_columns,
+            )
+        )
 
 
 def get_defensive_strategy(
@@ -318,37 +378,42 @@ def classify_explosive_play(actual_play_type: str, yards_gained: float) -> bool:
 
 
 class GameTracker:
-    def __init__(self):
-        self.model, self.model_columns = load_model_bundle(
-            "play_predictor_model.pkl",
-            "model_columns.pkl",
-        )
+    STATE_SCHEMA_VERSION = 1
 
-        self.direction_model, self.direction_model_columns = load_optional_model_bundle(
-            "direction_predictor_model.pkl",
-            "direction_model_columns.pkl",
-        )
-        self.run_concept_model, self.run_concept_model_columns = load_optional_model_bundle(
-            "run_concept_predictor_model.pkl",
-            "run_concept_model_columns.pkl",
-        )
-        self.pass_concept_model, self.pass_concept_model_columns = load_optional_model_bundle(
-            "pass_concept_predictor_model.pkl",
-            "pass_concept_model_columns.pkl",
-        )
+    def __init__(
+        self,
+        model_bundle: ModelBundle | None = None,
+        state: dict | None = None,
+    ):
+        bundle = model_bundle or ModelBundle.load()
+        self.model_bundle = bundle
+        self.model = bundle.model
+        self.model_columns = bundle.model_columns
+        self.direction_model = bundle.direction_model
+        self.direction_model_columns = bundle.direction_model_columns
+        self.run_concept_model = bundle.run_concept_model
+        self.run_concept_model_columns = bundle.run_concept_model_columns
+        self.pass_concept_model = bundle.pass_concept_model
+        self.pass_concept_model_columns = bundle.pass_concept_model_columns
 
         self.offense = None
         self.defense = None
-
         self.prev_play_pass = 0
         self.game_total_plays = 0
         self.game_total_passes = 0
-
         self.current_drive_number = 1
         self.drive_total_plays = 0
         self.drive_total_passes = 0
+        self.situation_stats = self._empty_situation_stats()
+        self.play_log = []
+        self.pending_play_context = None
 
-        self.situation_stats = {
+        if state:
+            self.restore_state(state)
+
+    @staticmethod
+    def _empty_situation_stats() -> dict:
+        return {
             "third_down": {"plays": 0, "passes": 0},
             "fourth_down": {"plays": 0, "passes": 0},
             "short_yardage": {"plays": 0, "passes": 0},
@@ -359,20 +424,104 @@ class GameTracker:
             "trailing": {"plays": 0, "passes": 0},
         }
 
-        self.play_log = []
-        self.pending_play_context = None
+    def export_state(self) -> dict:
+        """Return only JSON-serializable, game-specific mutable state."""
+        return {
+            "schema_version": self.STATE_SCHEMA_VERSION,
+            "offense": self.offense,
+            "defense": self.defense,
+            "prev_play_pass": self.prev_play_pass,
+            "game_total_plays": self.game_total_plays,
+            "game_total_passes": self.game_total_passes,
+            "current_drive_number": self.current_drive_number,
+            "drive_total_plays": self.drive_total_plays,
+            "drive_total_passes": self.drive_total_passes,
+            "situation_stats": deepcopy(self.situation_stats),
+            "play_log": deepcopy(self.play_log),
+            "pending_play_context": deepcopy(self.pending_play_context),
+        }
+
+    def restore_state(self, state: dict) -> None:
+        """Hydrate a request-local tracker from PostgreSQL or a legacy save."""
+        self.offense = state.get("offense") or None
+        self.defense = state.get("defense") or None
+        self.play_log = deepcopy(state.get("play_log") or [])
+        self.pending_play_context = deepcopy(
+            state.get("pending_play_context", state.get("pending")) or None
+        )
+
+        self.current_drive_number = int(
+            state.get("current_drive_number")
+            or max(
+                (int(play.get("drive_number", 1)) for play in self.play_log),
+                default=1,
+            )
+        )
+
+        counter_keys = {
+            "prev_play_pass",
+            "game_total_plays",
+            "game_total_passes",
+            "drive_total_plays",
+            "drive_total_passes",
+        }
+        if counter_keys.issubset(state):
+            self.prev_play_pass = int(state["prev_play_pass"])
+            self.game_total_plays = int(state["game_total_plays"])
+            self.game_total_passes = int(state["game_total_passes"])
+            self.drive_total_plays = int(state["drive_total_plays"])
+            self.drive_total_passes = int(state["drive_total_passes"])
+        else:
+            self._rebuild_counters_from_play_log()
+
+        supplied_stats = state.get("situation_stats")
+        if isinstance(supplied_stats, dict):
+            empty_stats = self._empty_situation_stats()
+            for key, default_value in empty_stats.items():
+                raw_value = supplied_stats.get(key, default_value)
+                empty_stats[key] = {
+                    "plays": int(raw_value.get("plays", 0)),
+                    "passes": int(raw_value.get("passes", 0)),
+                }
+            self.situation_stats = empty_stats
+        else:
+            self._rebuild_situation_stats_from_play_log()
+
+    def _rebuild_counters_from_play_log(self) -> None:
+        self.game_total_plays = len(self.play_log)
+        self.game_total_passes = sum(
+            1 for play in self.play_log if play.get("actual_play_type") == "PASS"
+        )
+        if self.play_log:
+            self.prev_play_pass = int(
+                self.play_log[-1].get("actual_play_type") == "PASS"
+            )
+        current_drive = [
+            play
+            for play in self.play_log
+            if int(play.get("drive_number", 1)) == self.current_drive_number
+        ]
+        self.drive_total_plays = len(current_drive)
+        self.drive_total_passes = sum(
+            1 for play in current_drive if play.get("actual_play_type") == "PASS"
+        )
+
+    def _rebuild_situation_stats_from_play_log(self) -> None:
+        self.situation_stats = self._empty_situation_stats()
+        for play in self.play_log:
+            actual = play.get("actual_play_type")
+            if actual not in {"RUN", "PASS"}:
+                continue
+            self._update_situation_stats(
+                down=int(play["down"]),
+                ydstogo=int(play["ydstogo"]),
+                yardline_100=int(play["yardline_100"]),
+                score_differential=int(play["score_differential"]),
+                is_pass=int(actual == "PASS"),
+            )
 
     def tier2_available(self) -> bool:
-        return all(
-            [
-                self.direction_model is not None,
-                self.direction_model_columns is not None,
-                self.run_concept_model is not None,
-                self.run_concept_model_columns is not None,
-                self.pass_concept_model is not None,
-                self.pass_concept_model_columns is not None,
-            ]
-        )
+        return self.model_bundle.tier2_available()
 
     def set_teams(self, offense, defense):
         self.offense = offense.strip().upper()
@@ -742,3 +891,78 @@ class GameTracker:
         )
 
         self.pending_play_context = None
+
+    def summary(self) -> dict:
+        plays = self.play_log
+        if not plays:
+            return {
+                "total_predictions": 0,
+                "correct_predictions": 0,
+                "game_accuracy": None,
+                "last_5_accuracy": None,
+                "last_10_accuracy": None,
+                "high_conf_accuracy": None,
+                "pred_pass_accuracy": None,
+                "pred_run_accuracy": None,
+                "avg_conf_correct": None,
+                "avg_conf_incorrect": None,
+                "third_fourth_accuracy": None,
+                "long_yardage_accuracy": None,
+                "defensive_success_rate": None,
+                "explosive_rate_allowed": None,
+            }
+
+        def accuracy(subset):
+            if not subset:
+                return None
+            return sum(1 for play in subset if play["correct_prediction"]) / len(subset)
+
+        def average_confidence(subset):
+            if not subset:
+                return None
+            return sum(play["confidence"] for play in subset) / len(subset)
+
+        total = len(plays)
+        correct = sum(1 for play in plays if play["correct_prediction"])
+        high_confidence = [play for play in plays if play["confidence"] >= 0.75]
+        predicted_pass = [
+            play for play in plays if play["predicted_play_type"] == "PASS"
+        ]
+        predicted_run = [
+            play for play in plays if play["predicted_play_type"] == "RUN"
+        ]
+        correct_plays = [play for play in plays if play["correct_prediction"]]
+        incorrect_plays = [play for play in plays if not play["correct_prediction"]]
+        third_fourth = [play for play in plays if play["down"] in [3, 4]]
+        long_yardage = [
+            play
+            for play in plays
+            if (
+                (play["down"] == 1 and play["ydstogo"] >= 11)
+                or (play["down"] == 2 and play["ydstogo"] >= 8)
+                or (play["down"] in [3, 4] and play["ydstogo"] >= 7)
+            )
+        ]
+        defensive_successes = sum(
+            1 for play in plays if play.get("defensive_success") is True
+        )
+        explosives = sum(
+            1 for play in plays if play.get("explosive_allowed") is True
+        )
+
+        return {
+            "total_predictions": total,
+            "correct_predictions": correct,
+            "game_accuracy": correct / total,
+            "last_5_accuracy": accuracy(plays[-5:]),
+            "last_10_accuracy": accuracy(plays[-10:]),
+            "high_conf_accuracy": accuracy(high_confidence),
+            "pred_pass_accuracy": accuracy(predicted_pass),
+            "pred_run_accuracy": accuracy(predicted_run),
+            "avg_conf_correct": average_confidence(correct_plays),
+            "avg_conf_incorrect": average_confidence(incorrect_plays),
+            "third_fourth_accuracy": accuracy(third_fourth),
+            "long_yardage_accuracy": accuracy(long_yardage),
+            "defensive_success_rate": defensive_successes / total,
+            "explosive_rate_allowed": explosives / total,
+        }

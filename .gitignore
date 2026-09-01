@@ -7,6 +7,9 @@ node_modules/
 # Python cache
 __pycache__/
 *.pyc
+.pytest_cache/
+.coverage
+*.db
 
 # VS Code
 .vscode/

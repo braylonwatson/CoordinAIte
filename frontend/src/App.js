@@ -173,6 +173,7 @@ function App() {
     tier2_models_available: false,
   });
   const [subscriptionMessage, setSubscriptionMessage] = useState("");
+  const [activeGameId, setActiveGameId] = useState(null);
 
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -235,11 +236,20 @@ function App() {
     }
   }, []);
 
-  const refreshData = useCallback(async () => {
+  const refreshData = useCallback(async (gameId) => {
+    if (!gameId) return;
+
     try {
-      const pendingRes = await fetch(`${API}/pending`);
-      const playLogRes = await fetch(`${API}/play-log`);
-      const summaryRes = await fetch(`${API}/summary`);
+      const encodedGameId = encodeURIComponent(gameId);
+      const [pendingRes, playLogRes, summaryRes] = await Promise.all([
+        fetch(`${API}/pending?game_id=${encodedGameId}`),
+        fetch(`${API}/play-log?game_id=${encodedGameId}`),
+        fetch(`${API}/summary?game_id=${encodedGameId}`),
+      ]);
+
+      if (!pendingRes.ok || !playLogRes.ok || !summaryRes.ok) {
+        throw new Error("Unable to refresh this game session.");
+      }
 
       const pendingData = await pendingRes.json();
       const playLogData = await playLogRes.json();
@@ -275,8 +285,6 @@ function App() {
   };
 
   useEffect(() => {
-    refreshData();
-
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener("resize", handleResize);
 
@@ -330,6 +338,7 @@ function App() {
     setDefense("");
     setSetupError("");
     setTeamsSet(false);
+    setActiveGameId(null);
   };
 
   const handleContinueAsGuest = () => {
@@ -357,6 +366,11 @@ function App() {
 
     if (!email || !password || (authMode === "signup" && !name)) {
       setAuthError("Please fill out all required fields.");
+      return;
+    }
+
+    if (authMode === "signup" && password.length < 8) {
+      setAuthError("Password must be at least 8 characters.");
       return;
     }
 
@@ -486,7 +500,11 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ offense, defense }),
+        body: JSON.stringify({
+          offense,
+          defense,
+          user_id: user?.user_id || null,
+        }),
       });
 
       const data = await res.json();
@@ -496,6 +514,7 @@ function App() {
         return;
       }
 
+      setActiveGameId(data.game_id);
       setTeamsSet(true);
       setScreen("dashboard");
     } catch (error) {
@@ -546,7 +565,7 @@ function App() {
   const handlePredict = async () => {
     setPredictionError("");
 
-    if (!teamsSet || !offense || !defense) {
+    if (!teamsSet || !offense || !defense || !activeGameId) {
       setPredictionError("Set both teams before making predictions.");
       return;
     }
@@ -560,8 +579,8 @@ function App() {
 
     try {
       const payload = useTier2
-        ? { ...form, user_id: user.user_id }
-        : { ...form };
+        ? { ...form, game_id: activeGameId, user_id: user.user_id }
+        : { ...form, game_id: activeGameId };
 
       const res = await fetch(`${API}${endpoint}`, {
         method: "POST",
@@ -580,7 +599,7 @@ function App() {
       }
 
       setPrediction(data);
-      refreshData();
+      refreshData(activeGameId);
     } catch (error) {
       console.error("Error predicting play:", error);
       setPrediction(null);
@@ -598,13 +617,14 @@ function App() {
         body: JSON.stringify({
           actual_play_type: actualPlayType,
           yards_gained: Number(yardsGained),
+          game_id: activeGameId,
         }),
       });
 
       if (res.ok) {
         setPrediction(null);
         setYardsGained(0);
-        refreshData();
+        refreshData(activeGameId);
       }
     } catch (error) {
       console.error("Error logging play:", error);
@@ -615,8 +635,12 @@ function App() {
     try {
       await fetch(`${API}/new-drive`, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ game_id: activeGameId }),
       });
-      refreshData();
+      refreshData(activeGameId);
     } catch (error) {
       console.error("Error starting new drive:", error);
     }
@@ -633,6 +657,7 @@ function App() {
     actualPlayType,
     yardsGained,
     teamsSet: true,
+    game_id: activeGameId,
   });
 
   const handleSaveGame = async () => {
@@ -651,6 +676,7 @@ function App() {
           user_id: user.user_id,
           title: `${getTeamDisplay(offense) || "Offense"} vs ${getTeamDisplay(defense) || "Defense"}`,
           game_state: buildGameSnapshot(),
+          game_id: activeGameId,
         }),
       });
 
@@ -676,7 +702,7 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ game_id: game.id }),
+        body: JSON.stringify({ game_id: game.id, user_id: user.user_id }),
       });
 
       const data = await res.json();
@@ -687,6 +713,7 @@ function App() {
       }
 
       const loaded = data.state || {};
+      setActiveGameId(data.game_id);
       setOffense(loaded.offense || "");
       setDefense(loaded.defense || "");
       setForm(
@@ -709,7 +736,7 @@ function App() {
       setSetupError("");
       setTeamsSet(Boolean(loaded.offense && loaded.defense));
       setScreen("dashboard");
-      refreshData();
+      refreshData(data.game_id);
     } catch (error) {
       console.error("Error resuming game:", error);
     }

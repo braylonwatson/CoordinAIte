@@ -1,0 +1,1 @@
+"""CoordinAIte backend application package."""
