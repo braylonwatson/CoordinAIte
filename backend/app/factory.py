@@ -15,6 +15,7 @@ def create_app(
     create_tables: bool = False,
 ) -> FastAPI:
     settings = settings or Settings.from_environment()
+    settings.validate_auth()
     engine = build_engine(settings.database_url)
 
     # Production uses Alembic. This option exists only for isolated tests.
@@ -32,12 +33,19 @@ def create_app(
     application.state.session_factory = build_session_factory(engine)
     application.state.model_bundle = model_bundle or ModelBundle.load()
 
+    @application.middleware("http")
+    async def prevent_account_response_caching(request, call_next):
+        response = await call_next(request)
+        # Game responses can contain private account or guest state.
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-Game-Token", "X-CSRF-Protection"],
     )
     application.include_router(api_router)
     return application

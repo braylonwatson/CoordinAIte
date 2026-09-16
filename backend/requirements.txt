@@ -5,6 +5,7 @@ sqlalchemy==2.0.48
 alembic==1.19.1
 psycopg2-binary==2.9.11
 passlib==1.7.4
+PyJWT==2.14.0
 python-dotenv==1.2.2
 joblib==1.5.3
 pandas==1.5.3

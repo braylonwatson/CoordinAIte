@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_db, get_model_bundle
+from app.api.dependencies import get_db, get_game_access, get_model_bundle
+from app.core.security import new_secret
 from app.schemas import GameActionRequest, LogPlayRequest, PredictRequest, TeamRequest
 from app.services.game_sessions import (
     build_tracker,
     create_game_session,
     get_game_session,
     persist_tracker,
-    require_user,
+    GameAccess,
 )
 from app.services.subscriptions import subscription_is_active
 from game_tracker import ModelBundle
@@ -41,32 +42,39 @@ def tier2_status(model_bundle: ModelBundle = Depends(get_model_bundle)):
 @router.post("/set-teams", status_code=201)
 def set_teams(
     data: TeamRequest,
+    response: Response,
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
+    guest_token = new_secret() if access.user is None else None
     game = create_game_session(
         db=db,
         model_bundle=model_bundle,
         offense=data.offense,
         defense=data.defense,
-        user_id=data.user_id,
+        user_id=access.user.id if access.user else None,
+        guest_token=guest_token,
     )
+    response.headers["Cache-Control"] = "no-store"
     return {
         "message": "Game session created",
         "game_id": game.id,
         "state_version": game.version,
         "offense": game.offense,
         "defense": game.defense,
+        "guest_token": guest_token,
     }
 
 
 @router.get("/state")
 def get_state(
     game_id: str = Query(min_length=36, max_length=36),
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    game = get_game_session(db, game_id)
+    game = get_game_session(db, game_id, access)
     tracker = build_tracker(game, model_bundle)
     return state_response(game, tracker)
 
@@ -77,18 +85,16 @@ def make_prediction(
     tier: int,
     db: Session,
     model_bundle: ModelBundle,
+    access: GameAccess,
 ):
-    game = get_game_session(db, data.game_id, for_update=True)
+    game = get_game_session(db, data.game_id, access, for_update=True)
     if tier == 2:
-        if not data.user_id:
+        if not access.user:
             raise HTTPException(
                 status_code=403,
                 detail="Tier 2 prediction requires a logged-in Tier 2 account.",
             )
-        user = require_user(db, data.user_id)
-        if game.user_id not in {None, user.id}:
-            raise HTTPException(status_code=403, detail="Game does not belong to this user")
-        if not subscription_is_active(user.subscription_status):
+        if not subscription_is_active(access.user.subscription_status):
             raise HTTPException(status_code=403, detail="Tier 2 subscription required")
 
     tracker = build_tracker(game, model_bundle)
@@ -116,28 +122,31 @@ def make_prediction(
 @router.post("/predict")
 def predict(
     data: PredictRequest,
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    return make_prediction(data, tier=1, db=db, model_bundle=model_bundle)
+    return make_prediction(data, tier=1, db=db, model_bundle=model_bundle, access=access)
 
 
 @router.post("/predict-tier2")
 def predict_tier2(
     data: PredictRequest,
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    return make_prediction(data, tier=2, db=db, model_bundle=model_bundle)
+    return make_prediction(data, tier=2, db=db, model_bundle=model_bundle, access=access)
 
 
 @router.get("/pending")
 def get_pending(
     game_id: str = Query(min_length=36, max_length=36),
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    game = get_game_session(db, game_id)
+    game = get_game_session(db, game_id, access)
     tracker = build_tracker(game, model_bundle)
     return tracker.pending_play_context or {}
 
@@ -145,10 +154,11 @@ def get_pending(
 @router.post("/log-play")
 def log_play(
     data: LogPlayRequest,
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    game = get_game_session(db, data.game_id, for_update=True)
+    game = get_game_session(db, data.game_id, access, for_update=True)
     tracker = build_tracker(game, model_bundle)
     try:
         tracker.log_pending_result(
@@ -171,10 +181,11 @@ def log_play(
 @router.get("/play-log")
 def get_play_log(
     game_id: str = Query(min_length=36, max_length=36),
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    game = get_game_session(db, game_id)
+    game = get_game_session(db, game_id, access)
     tracker = build_tracker(game, model_bundle)
     return tracker.play_log
 
@@ -182,10 +193,11 @@ def get_play_log(
 @router.post("/new-drive")
 def new_drive(
     data: GameActionRequest,
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    game = get_game_session(db, data.game_id, for_update=True)
+    game = get_game_session(db, data.game_id, access, for_update=True)
     tracker = build_tracker(game, model_bundle)
     tracker.start_new_drive()
     persist_tracker(game, tracker)
@@ -201,9 +213,10 @@ def new_drive(
 @router.get("/summary")
 def get_summary(
     game_id: str = Query(min_length=36, max_length=36),
+    access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    game = get_game_session(db, game_id)
+    game = get_game_session(db, game_id, access)
     tracker = build_tracker(game, model_bundle)
     return tracker.summary()

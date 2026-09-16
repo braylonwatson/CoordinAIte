@@ -25,6 +25,7 @@ game state.
 
 - [Architecture and design decisions](docs/architecture.md)
 - [Database migration instructions](docs/database-migration.md)
+- [Authentication, refresh cookies, and ownership](docs/authentication.md)
 
 ### Backend development
 
@@ -38,3 +39,10 @@ python -m uvicorn main:app --reload
 
 Copy `.env.example` to `.env` and replace its example values locally. Never
 commit `.env`.
+
+For an existing setup, add the new variables without overwriting your `.env`.
+`JWT_SECRET_KEY` is now required. Generate one random secret and keep it stable
+across restarts and API instances. Local cookie authentication expects the
+frontend at `http://localhost:3000` and `REACT_APP_API_URL=http://localhost:8000`.
+See [the phase-two local setup steps](docs/phase2-local-setup.md) for the Windows
+commands to apply this milestone to the working phase-one branch.

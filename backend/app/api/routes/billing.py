@@ -3,11 +3,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import stripe
 
-from app.api.dependencies import get_db, get_model_bundle, get_settings
+from app.api.dependencies import get_current_user, get_db, get_model_bundle, get_settings
 from app.core.config import Settings
 from app.db.models import User
 from app.schemas import CheckoutSessionRequest
-from app.services.game_sessions import require_user
 from app.services.subscriptions import (
     stripe_value,
     subscription_is_active,
@@ -46,11 +45,9 @@ def get_or_create_stripe_customer(
 
 @router.get("/me/subscription")
 def get_my_subscription(
-    user_id: int,
-    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
     model_bundle: ModelBundle = Depends(get_model_bundle),
 ):
-    user = require_user(db, user_id)
     return {
         "user_id": user.id,
         "tier": user.tier or "free",
@@ -63,6 +60,7 @@ def get_my_subscription(
 @router.post("/create-checkout-session")
 def create_checkout_session(
     data: CheckoutSessionRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
@@ -71,7 +69,6 @@ def create_checkout_session(
     if not settings.stripe_price_id_tier2:
         raise HTTPException(status_code=503, detail="Tier 2 price is not configured.")
 
-    user = require_user(db, data.user_id)
     try:
         customer_id = get_or_create_stripe_customer(db, user, settings)
         checkout = stripe.checkout.Session.create(

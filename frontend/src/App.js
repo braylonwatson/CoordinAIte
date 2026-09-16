@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import BackgroundParticles from "./BackgroundParticles";
 
-const API = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
+import { apiFetch, authenticate, AUTH_EXPIRED, restoreSession, setGuestGameToken, signOut } from "./api";
 
 const TEAM_OPTIONS = [
   { value: "ARI", label: "Arizona Cardinals" },
@@ -152,17 +152,9 @@ function App() {
   const [defense, setDefense] = useState("");
   const [setupError, setSetupError] = useState("");
   const [predictionError, setPredictionError] = useState("");
-  const [user, setUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem("coordinaite_current_user");
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [isGuest, setIsGuest] = useState(() => {
-    return localStorage.getItem("coordinaite_guest") === "true";
-  });
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [isGuest, setIsGuest] = useState(() => sessionStorage.getItem("coordinaite_guest") === "true");
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [authError, setAuthError] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -206,19 +198,9 @@ function App() {
     return TEAM_NAME_BY_CODE[code] ? `${TEAM_NAME_BY_CODE[code]} (${code})` : code;
   }, []);
 
-  const fetchSubscriptionStatus = useCallback(async (userId) => {
-    if (!userId) {
-      setSubscription({
-        tier: "free",
-        subscription_status: null,
-        tier2_access: false,
-        tier2_models_available: false,
-      });
-      return;
-    }
-
+  const fetchSubscriptionStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/me/subscription?user_id=${userId}`);
+      const res = await apiFetch("/me/subscription");
       const data = await res.json();
 
       if (!res.ok) {
@@ -242,9 +224,9 @@ function App() {
     try {
       const encodedGameId = encodeURIComponent(gameId);
       const [pendingRes, playLogRes, summaryRes] = await Promise.all([
-        fetch(`${API}/pending?game_id=${encodedGameId}`),
-        fetch(`${API}/play-log?game_id=${encodedGameId}`),
-        fetch(`${API}/summary?game_id=${encodedGameId}`),
+        apiFetch(`/pending?game_id=${encodedGameId}`),
+        apiFetch(`/play-log?game_id=${encodedGameId}`),
+        apiFetch(`/summary?game_id=${encodedGameId}`),
       ]);
 
       if (!pendingRes.ok || !playLogRes.ok || !summaryRes.ok) {
@@ -263,10 +245,9 @@ function App() {
     }
   }, []);
 
-  const fetchUserGames = async (userId) => {
-    if (!userId) return;
+  const fetchUserGames = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/games/${userId}`);
+      const res = await apiFetch("/games");
       const data = await res.json();
       if (res.ok && Array.isArray(data)) {
         const sorted = [...data].sort((a, b) => {
@@ -282,7 +263,7 @@ function App() {
       console.error("Error fetching games:", error);
       setHistoryGames([]);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -290,12 +271,8 @@ function App() {
 
     if (user) {
       setIsGuest(false);
-      fetchUserGames(user.user_id);
-      fetchSubscriptionStatus(user.user_id);
-    }
-
-    if (user || isGuest) {
-      setScreen("teamSetup");
+      fetchUserGames();
+      fetchSubscriptionStatus();
     }
 
     const params = new URLSearchParams(window.location.search);
@@ -305,7 +282,7 @@ function App() {
     if (success === "true") {
       setSubscriptionMessage("Payment successful. Tier 2 access is being activated.");
       if (user?.user_id) {
-        fetchSubscriptionStatus(user.user_id);
+        fetchSubscriptionStatus();
       }
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (canceled === "true") {
@@ -314,11 +291,11 @@ function App() {
     }
 
     return () => window.removeEventListener("resize", handleResize);
-  }, [refreshData, user, isGuest, fetchSubscriptionStatus]);
+  }, [user, fetchSubscriptionStatus, fetchUserGames]);
 
   const userGames = useMemo(() => historyGames, [historyGames]);
 
-  const resetGameState = () => {
+  const resetGameState = useCallback(() => {
     setForm({
       down: 1,
       ydstogo: 10,
@@ -339,143 +316,110 @@ function App() {
     setSetupError("");
     setTeamsSet(false);
     setActiveGameId(null);
-  };
+    setGuestGameToken(null);
+  }, []);
 
-  const handleContinueAsGuest = () => {
-    setIsGuest(true);
-    setUser(null);
-    setAuthError("");
-    setSubscription({
-      tier: "free",
-      subscription_status: null,
-      tier2_access: false,
-      tier2_models_available: false,
-    });
-    localStorage.setItem("coordinaite_guest", "true");
+  useEffect(() => {
+    let mounted = true;
+    // Discard the old, unverified browser profile from phase one.
     localStorage.removeItem("coordinaite_current_user");
-    setScreen("teamSetup");
+    localStorage.removeItem("coordinaite_guest");
+    const onExpired = () => {
+      setUser(null);
+      setIsGuest(false);
+      setHistoryGames([]);
+      setShowSavePrompt(false);
+      resetGameState();
+      sessionStorage.removeItem("coordinaite_guest");
+      setAuthError("Your session expired. Please sign in again.");
+      setScreen("authChoice");
+    };
+    window.addEventListener(AUTH_EXPIRED, onExpired);
+    restoreSession().then((data) => {
+      if (!mounted) return;
+      if (data) {
+        setUser({ user_id: data.user_id, name: data.username, email: data.email });
+        setIsGuest(false);
+        sessionStorage.removeItem("coordinaite_guest");
+        setScreen("teamSetup");
+      } else if (sessionStorage.getItem("coordinaite_guest") === "true") {
+        setScreen("teamSetup");
+      }
+    }).catch((error) => {
+      if (mounted) setAuthError(error.message || "Could not connect to the server.");
+    }).finally(() => {
+      if (mounted) setAuthReady(true);
+    });
+    return () => {
+      mounted = false;
+      window.removeEventListener(AUTH_EXPIRED, onExpired);
+    };
+  }, [resetGameState]);
+
+  const handleContinueAsGuest = async () => {
+    try {
+      await signOut();
+      resetGameState();
+      setIsGuest(true);
+      setUser(null);
+      setHistoryGames([]);
+      setAuthError("");
+      setSubscription({ tier: "free", subscription_status: null, tier2_access: false, tier2_models_available: false });
+      sessionStorage.setItem("coordinaite_guest", "true");
+      setScreen("teamSetup");
+    } catch (error) {
+      setAuthError("Could not start a guest session. Please try again.");
+    }
   };
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
-
     const email = authForm.email.trim().toLowerCase();
     const password = authForm.password;
     const name = authForm.name.trim();
-
     if (!email || !password || (authMode === "signup" && !name)) {
       setAuthError("Please fill out all required fields.");
       return;
     }
-
     if (authMode === "signup" && password.length < 8) {
       setAuthError("Password must be at least 8 characters.");
       return;
     }
-
     try {
-      if (authMode === "signup") {
-        const res = await fetch(`${API}/signup`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            username: name,
-            email,
-            password,
-          }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAuthError(data.detail || "Unable to create account.");
-          return;
-        }
-
-        const newUser = {
-          user_id: data.user_id,
-          name: data.username,
-          email,
-        };
-
-        localStorage.setItem("coordinaite_current_user", JSON.stringify(newUser));
-        localStorage.removeItem("coordinaite_guest");
-        setUser(newUser);
-        setIsGuest(false);
-        setSubscription({
-          tier: data.tier || "free",
-          subscription_status: data.subscription_status || null,
-          tier2_access: false,
-          tier2_models_available: false,
-        });
-        setAuthForm({ name: "", email: "", password: "" });
-        setScreen("teamSetup");
-        fetchUserGames(newUser.user_id);
-        fetchSubscriptionStatus(newUser.user_id);
-        return;
-      }
-
-      const res = await fetch(`${API}/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setAuthError(data.detail || "Invalid email or password.");
-        return;
-      }
-
-      const existingUser = {
-        user_id: data.user_id,
-        name: data.username,
-        email,
-      };
-
-      localStorage.setItem("coordinaite_current_user", JSON.stringify(existingUser));
-      localStorage.removeItem("coordinaite_guest");
-      setUser(existingUser);
+      const { user: signedIn, data } = await authenticate(authMode,
+        authMode === "signup" ? { username: name, email, password } : { email, password });
+      const continueGuestGame = isGuest && activeGameId;
+      if (!continueGuestGame) resetGameState();
+      setUser(signedIn);
       setIsGuest(false);
+      sessionStorage.removeItem("coordinaite_guest");
       setSubscription({
-        tier: data.tier || "free",
-        subscription_status: data.subscription_status || null,
-        tier2_access: Boolean(data.tier === "tier2"),
-        tier2_models_available: false,
+        tier: data.tier || "free", subscription_status: data.subscription_status || null,
+        tier2_access: false, tier2_models_available: false,
       });
       setAuthForm({ name: "", email: "", password: "" });
-      setScreen("teamSetup");
-      fetchUserGames(existingUser.user_id);
-      fetchSubscriptionStatus(existingUser.user_id);
+      setScreen(continueGuestGame ? "dashboard" : "teamSetup");
     } catch (error) {
-      console.error("Auth error:", error);
-      setAuthError("Could not connect to the server.");
+      setAuthError(error.message || "Could not connect to the server.");
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("coordinaite_current_user");
-    localStorage.removeItem("coordinaite_guest");
+  const handleLogout = async () => {
+    let errorMessage = "";
+    try {
+      await signOut();
+    } catch (error) {
+      errorMessage = "Could not finish signing out on the server. Reconnect and try again.";
+    }
+    sessionStorage.removeItem("coordinaite_guest");
     setUser(null);
     setIsGuest(false);
     setHistoryGames([]);
     setShowSavePrompt(false);
-    setSubscription({
-      tier: "free",
-      subscription_status: null,
-      tier2_access: false,
-      tier2_models_available: false,
-    });
+    setSubscription({ tier: "free", subscription_status: null, tier2_access: false, tier2_models_available: false });
     setSubscriptionMessage("");
+    setAuthError(errorMessage);
     resetGameState();
     setScreen("authChoice");
   };
@@ -495,7 +439,7 @@ function App() {
     }
 
     try {
-      const res = await fetch(`${API}/set-teams`, {
+      const res = await apiFetch(`/set-teams`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -503,7 +447,6 @@ function App() {
         body: JSON.stringify({
           offense,
           defense,
-          user_id: user?.user_id || null,
         }),
       });
 
@@ -515,6 +458,7 @@ function App() {
       }
 
       setActiveGameId(data.game_id);
+      setGuestGameToken(data.guest_token);
       setTeamsSet(true);
       setScreen("dashboard");
     } catch (error) {
@@ -534,12 +478,12 @@ function App() {
       setCheckoutLoading(true);
       setSubscriptionMessage("");
 
-      const res = await fetch(`${API}/create-checkout-session`, {
+      const res = await apiFetch(`/create-checkout-session`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ user_id: user.user_id }),
+        body: JSON.stringify({}),
       });
 
       const data = await res.json();
@@ -578,11 +522,9 @@ function App() {
     const endpoint = useTier2 ? "/predict-tier2" : "/predict";
 
     try {
-      const payload = useTier2
-        ? { ...form, game_id: activeGameId, user_id: user.user_id }
-        : { ...form, game_id: activeGameId };
+      const payload = { ...form, game_id: activeGameId };
 
-      const res = await fetch(`${API}${endpoint}`, {
+      const res = await apiFetch(`${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -609,7 +551,7 @@ function App() {
 
   const handleLogPlay = async () => {
     try {
-      const res = await fetch(`${API}/log-play`, {
+      const res = await apiFetch(`/log-play`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -633,7 +575,7 @@ function App() {
 
   const handleNewDrive = async () => {
     try {
-      await fetch(`${API}/new-drive`, {
+      await apiFetch(`/new-drive`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -667,13 +609,12 @@ function App() {
     }
 
     try {
-      const res = await fetch(`${API}/games`, {
+      const res = await apiFetch(`/games`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          user_id: user.user_id,
           title: `${getTeamDisplay(offense) || "Offense"} vs ${getTeamDisplay(defense) || "Defense"}`,
           game_state: buildGameSnapshot(),
           game_id: activeGameId,
@@ -687,7 +628,7 @@ function App() {
         return;
       }
 
-      await fetchUserGames(user.user_id);
+      await fetchUserGames();
       resetGameState();
       setScreen("teamSetup");
     } catch (error) {
@@ -697,12 +638,12 @@ function App() {
 
   const handleResumeGame = async (game) => {
     try {
-      const res = await fetch(`${API}/games/load`, {
+      const res = await apiFetch(`/games/load`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ game_id: game.id, user_id: user.user_id }),
+        body: JSON.stringify({ game_id: game.id }),
       });
 
       const data = await res.json();
@@ -713,6 +654,7 @@ function App() {
       }
 
       const loaded = data.state || {};
+      setGuestGameToken(null);
       setActiveGameId(data.game_id);
       setOffense(loaded.offense || "");
       setDefense(loaded.defense || "");
@@ -746,12 +688,12 @@ function App() {
     if (!user) return;
 
     try {
-      const res = await fetch(`${API}/games/${gameId}?user_id=${user.user_id}`, {
+      const res = await apiFetch(`/games/${gameId}`, {
         method: "DELETE",
       });
 
       if (res.ok) {
-        fetchUserGames(user.user_id);
+        fetchUserGames();
       }
     } catch (error) {
       console.error("Error deleting game:", error);
@@ -1282,7 +1224,11 @@ function App() {
   };
 
   const launchDisabled = !offense || !defense;
-  const tier2Enabled = subscription.tier2_access && subscription.tier2_models_available;
+  if (!authReady) {
+    return <div style={{ minHeight: "100vh", background: "#080b11", color: "white", padding: 32 }}>Loading CoordinAIte…</div>;
+  }
+
+  const tier2Enabled = Boolean(user) && subscription.tier2_access && subscription.tier2_models_available;
 
   if (screen === "authChoice") {
     return (

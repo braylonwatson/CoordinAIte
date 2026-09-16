@@ -1,10 +1,12 @@
+from dataclasses import dataclass
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, false, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import GameSession, User
+from app.core.security import hash_secret
 from game_tracker import GameTracker, ModelBundle
 
 
@@ -14,6 +16,12 @@ VALID_TEAMS = {
     "LAC", "LAR", "LV", "MIA", "MIN", "NE", "NO", "NYG",
     "NYJ", "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS",
 }
+
+
+@dataclass(frozen=True)
+class GameAccess:
+    user: User | None
+    guest_token: str | None = None
 
 
 def normalize_team(team: str | None) -> str:
@@ -41,6 +49,7 @@ def create_game_session(
     offense: str,
     defense: str,
     user_id: int | None = None,
+    guest_token: str | None = None,
     tracker_state: dict | None = None,
 ) -> GameSession:
     offense = normalize_team(offense)
@@ -50,12 +59,15 @@ def create_game_session(
 
     if user_id is not None:
         require_user(db, user_id)
+    elif not guest_token:
+        raise ValueError("Anonymous games require a private guest token")
 
     tracker = GameTracker(model_bundle=model_bundle, state=tracker_state)
     tracker.set_teams(offense, defense)
     game = GameSession(
         id=str(uuid4()),
         user_id=user_id,
+        guest_token_hash=hash_secret(guest_token) if user_id is None else None,
         offense=offense,
         defense=defense,
         tracker_state=tracker.export_state(),
@@ -71,10 +83,16 @@ def create_game_session(
 def get_game_session(
     db: Session,
     game_id: str,
+    access: GameAccess,
     *,
     for_update: bool = False,
 ) -> GameSession:
-    statement = select(GameSession).where(GameSession.id == game_id)
+    owned = GameSession.user_id == access.user.id if access.user else false()
+    guest = (
+        and_(GameSession.user_id.is_(None), GameSession.guest_token_hash == hash_secret(access.guest_token))
+        if access.guest_token else false()
+    )
+    statement = select(GameSession).where(GameSession.id == game_id, or_(owned, guest))
     if for_update:
         statement = statement.with_for_update()
     game = db.execute(statement).scalar_one_or_none()

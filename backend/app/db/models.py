@@ -34,6 +34,21 @@ class SavedGame(Base):
     user = relationship("User")
 
 
+class AuthSession(Base):
+    """Shared login state permits refresh rotation and immediate logout on any worker."""
+
+    __tablename__ = "auth_sessions"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    refresh_token_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User")
+
+
 class GameSession(Base):
     """Durable live-game state shared by every API container."""
 
@@ -41,6 +56,7 @@ class GameSession(Base):
 
     id = Column(String(36), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    guest_token_hash = Column(String(64), nullable=True)
     offense = Column(String(3), nullable=False)
     defense = Column(String(3), nullable=False)
     tracker_state = Column(JSON, nullable=False)

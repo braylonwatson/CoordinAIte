@@ -11,11 +11,11 @@ def test_saved_game_restores_a_new_live_session(client):
         },
     )
     assert signup.status_code == 201
-    user_id = signup.json()["user_id"]
+    client.headers["Authorization"] = f"Bearer {signup.json()['access_token']}"
 
     created = client.post(
         "/set-teams",
-        json={"offense": "KC", "defense": "BUF", "user_id": user_id},
+        json={"offense": "KC", "defense": "BUF"},
     )
     game_id = created.json()["game_id"]
     assert client.post("/predict", json=prediction_payload(game_id)).status_code == 200
@@ -31,7 +31,6 @@ def test_saved_game_restores_a_new_live_session(client):
     saved = client.post(
         "/games",
         json={
-            "user_id": user_id,
             "title": "Chiefs vs Bills",
             "game_id": game_id,
             "game_state": {"offense": "KC", "defense": "BUF"},
@@ -41,7 +40,7 @@ def test_saved_game_restores_a_new_live_session(client):
 
     loaded = client.post(
         "/games/load",
-        json={"game_id": saved.json()["game_id"], "user_id": user_id},
+        json={"game_id": saved.json()["game_id"]},
     )
     assert loaded.status_code == 200
     resumed_game_id = loaded.json()["game_id"]

@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.factory import create_app
-from tests.conftest import create_game, prediction_payload
+from tests.conftest import TEST_JWT_SECRET, create_game, prediction_payload
 
 
 def test_two_games_do_not_share_tracker_state(client):
@@ -38,7 +38,7 @@ def test_two_games_do_not_share_tracker_state(client):
 
 def test_separate_api_instances_share_database_state(tmp_path, model_bundle):
     database_path = tmp_path / "shared.db"
-    settings = Settings(database_url=f"sqlite+pysqlite:///{database_path}")
+    settings = Settings(database_url=f"sqlite+pysqlite:///{database_path}", jwt_secret_key=TEST_JWT_SECRET)
 
     first_app = create_app(
         settings=settings,
@@ -49,9 +49,11 @@ def test_separate_api_instances_share_database_state(tmp_path, model_bundle):
         game_id = create_game(first_client, "MIN", "DET")
         prediction = first_client.post("/predict", json=prediction_payload(game_id))
         assert prediction.status_code == 200
+        authorization = first_client.headers["Authorization"]
 
     second_app = create_app(settings=settings, model_bundle=model_bundle)
     with TestClient(second_app) as second_client:
+        second_client.headers["Authorization"] = authorization
         state = second_client.get("/state", params={"game_id": game_id})
         pending = second_client.get("/pending", params={"game_id": game_id})
 

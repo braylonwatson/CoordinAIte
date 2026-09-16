@@ -20,9 +20,11 @@ is no process-wide `GameTracker` and no requirement for sticky sessions.
 
 ## Request lifecycle
 
-1. `POST /set-teams` creates a durable `game_sessions` row and returns a UUID.
-2. The client sends that `game_id` with predictions and game mutations.
-3. The API locks the matching row for a mutation.
+1. Login returns a signed access token and a rotating HttpOnly refresh cookie.
+2. `POST /set-teams` creates a durable game owned by the authenticated user,
+   or a guest game with a separate private access token.
+3. The client sends the `game_id` plus its credentials. The API checks ownership
+   and locks the matching row for a mutation.
 4. It hydrates a request-local `GameTracker` from `tracker_state`.
 5. It runs the prediction or mutation using the shared model bundle.
 6. It writes the new tracker state, increments `version`, and commits.
@@ -79,10 +81,21 @@ The backend test suite proves both isolation and shared persistence:
 - two games cannot overwrite each other's teams or play counters;
 - a second API application instance can read a game created by the first;
 - serialized tracker state preserves live tendency counters.
+- invalid/expired JWTs cannot authenticate;
+- another account cannot read, mutate, save, resume, or delete a game;
+- refresh cookies rotate and previously used values are rejected;
+- logout revokes access across API instances;
+- migrations preserve existing accounts and saved games.
+
+Authentication and its local/deployment configuration are documented in
+[authentication.md](authentication.md). JWTs do not contain subscription rights;
+Tier 2 authorization reads the current account record on each request. Database
+login sessions support immediate revocation without process-local session state.
 
 ## Planned evolution
 
-1. JWT access and refresh tokens with server-enforced ownership.
+1. Production auth hardening: rate limits, account recovery, email verification,
+   expired-session cleanup, and stronger refresh-token reuse detection.
 2. Normalized `plays` and `predictions` tables for analytics and model audits.
 3. Docker Compose and CI checks for migrations, tests, and frontend builds.
 4. Redis-backed rate limiting and background jobs where measurements justify it.
