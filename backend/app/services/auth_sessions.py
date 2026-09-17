@@ -50,7 +50,7 @@ def set_refresh_cookie(response: Response, value: str, session: AuthSession, set
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite=settings.auth_cookie_samesite,
-        path="/auth",
+        path=settings.auth_cookie_path,
         max_age=max(0, int((as_utc(session.expires_at) - utc_now()).total_seconds())),
     )
 
@@ -58,7 +58,7 @@ def set_refresh_cookie(response: Response, value: str, session: AuthSession, set
 def clear_refresh_cookie(response: Response, settings: Settings) -> None:
     response.delete_cookie(
         REFRESH_COOKIE,
-        path="/auth",
+        path=settings.auth_cookie_path,
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite=settings.auth_cookie_samesite,

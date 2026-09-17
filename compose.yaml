@@ -1,0 +1,40 @@
+# Local development only. These credentials never configure the AWS deployment.
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: coordinaite
+      POSTGRES_USER: coordinaite
+      POSTGRES_PASSWORD: local-development-only
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coordinaite -d coordinaite"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  migrate:
+    build: ./backend
+    command: ["python", "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://coordinaite:local-development-only@postgres:5432/coordinaite
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    build: ./backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DATABASE_URL: postgresql://coordinaite:local-development-only@postgres:5432/coordinaite
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in this terminal or the local .env file}
+      APP_ENV: development
+      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+volumes:
+  postgres_data:

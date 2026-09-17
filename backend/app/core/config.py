@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
+from sqlalchemy.engine import URL
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -16,9 +17,34 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
+def database_url_from_environment(environment) -> str:
+    # ECS supplies the password separately from Secrets Manager. Building the URL
+    # here keeps credentials out of Terraform state and safely escapes punctuation.
+    if environment.get("DATABASE_HOST"):
+        required = ("DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_NAME")
+        if any(not environment.get(key) for key in required):
+            raise RuntimeError("DATABASE_HOST requires DATABASE_USER, DATABASE_PASSWORD, and DATABASE_NAME.")
+        query = {}
+        for key, parameter in (("DATABASE_SSLMODE", "sslmode"), ("DATABASE_SSLROOTCERT", "sslrootcert")):
+            if environment.get(key):
+                query[parameter] = environment[key]
+        return URL.create(
+            "postgresql+psycopg2",
+            username=environment["DATABASE_USER"],
+            password=environment["DATABASE_PASSWORD"],
+            host=environment["DATABASE_HOST"],
+            port=int(environment.get("DATABASE_PORT", "5432")),
+            database=environment["DATABASE_NAME"],
+            query=query,
+        ).render_as_string(hide_password=False)
+    if environment.get("DATABASE_URL"):
+        return normalize_database_url(environment["DATABASE_URL"])
+    raise RuntimeError("Set DATABASE_URL or the DATABASE_HOST connection settings.")
+
+
 @dataclass(frozen=True)
 class Settings:
-    database_url: str
+    database_url: str = field(repr=False)
     frontend_url: str = "http://localhost:3000"
     cors_origins: tuple[str, ...] = ("http://localhost:3000",)
     stripe_secret_key: str | None = None
@@ -32,6 +58,7 @@ class Settings:
     refresh_token_days: int = 7
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
+    auth_cookie_path: str = "/auth"
 
     def validate_auth(self) -> None:
         if len(self.jwt_secret_key.encode("utf-8")) < 32:
@@ -46,13 +73,12 @@ class Settings:
             raise RuntimeError("Production and SameSite=None require AUTH_COOKIE_SECURE=true.")
         if not self.cors_origins or "*" in self.cors_origins:
             raise RuntimeError("CORS_ORIGINS must list explicit frontend origins.")
+        if self.auth_cookie_path not in {"/auth", "/api/auth"}:
+            raise RuntimeError("AUTH_COOKIE_PATH must be /auth or /api/auth.")
 
     @classmethod
     def from_environment(cls) -> "Settings":
         load_dotenv(PROJECT_ROOT / ".env", override=False)
-        raw_database_url = os.getenv("DATABASE_URL")
-        if not raw_database_url:
-            raise RuntimeError("DATABASE_URL is not set.")
 
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
         raw_origins = os.getenv("CORS_ORIGINS", frontend_url)
@@ -63,7 +89,7 @@ class Settings:
         )
 
         return cls(
-            database_url=normalize_database_url(raw_database_url),
+            database_url=database_url_from_environment(os.environ),
             frontend_url=frontend_url,
             cors_origins=cors_origins,
             stripe_secret_key=os.getenv("STRIPE_SECRET_KEY"),
@@ -79,4 +105,5 @@ class Settings:
                 "AUTH_COOKIE_SECURE", "true" if os.getenv("APP_ENV") == "production" else "false"
             ).lower() == "true",
             auth_cookie_samesite=os.getenv("AUTH_COOKIE_SAMESITE", "lax").lower(),
+            auth_cookie_path=os.getenv("AUTH_COOKIE_PATH", "/auth"),
         )

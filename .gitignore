@@ -22,3 +22,12 @@ __pycache__/
 
 # Environment variables
 .env
+
+# Terraform caches, local account settings, plans, and state
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra/aws/backend.hcl
+infra/aws/terraform.tfvars
+release-config.json

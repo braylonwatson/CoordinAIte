@@ -46,3 +46,10 @@ across restarts and API instances. Local cookie authentication expects the
 frontend at `http://localhost:3000` and `REACT_APP_API_URL=http://localhost:8000`.
 See [the phase-two local setup steps](docs/phase2-local-setup.md) for the Windows
 commands to apply this milestone to the working phase-one branch.
+
+# AWS deployment
+
+The backend can now be packaged as a container and deployed to ECS Fargate with
+RDS PostgreSQL. See [the AWS deployment guide](docs/aws-deployment.md) for the
+Terraform configuration, migration task, Vercel proxy, and GitHub Actions release
+workflow. Cloud resources have not been provisioned by this code change.

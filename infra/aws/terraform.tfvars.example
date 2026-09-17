@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and supply your actual frontend origin.
+region       = "us-east-1"
+frontend_url = "https://YOUR-PROJECT.vercel.app"
+
+# Reuse an existing GitHub OIDC provider if this account already has one.
+# github_oidc_provider_arn = "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+
+# Default: one small database with backups, without a standby.
+# Enable a standby after reviewing the additional cost.
+# db_multi_az = true
