@@ -16,9 +16,44 @@ test("sends login credentials and uses a bearer token without browser token stor
   await authenticate("login", { email: login.email, password: "strong-pass" });
   await apiFetch("/games");
   expect(fetch.mock.calls[0][1]).toMatchObject({ credentials: "include", headers: { "X-CSRF-Protection": "1" } });
-  expect(fetch.mock.calls[1][1]).toMatchObject({ credentials: "omit", headers: { Authorization: "Bearer access-one" } });
+  expect(fetch.mock.calls[1][1]).toMatchObject({ credentials: "same-origin", headers: { Authorization: "Bearer access-one" } });
   expect(localStorage.length).toBe(0);
   expect(sessionStorage.length).toBe(0);
+});
+
+test("launches a dashboard behind a cookie-protected same-origin proxy", async () => {
+  const previousApiUrl = process.env.REACT_APP_API_URL;
+  process.env.REACT_APP_API_URL = "/api";
+  let client;
+  jest.isolateModules(() => { client = require("./api"); });
+  const expired = jest.fn();
+  window.addEventListener(AUTH_EXPIRED, expired);
+  // Model the hosting layer independently of the application's bearer auth:
+  // a valid access token cannot replace the deployment-access cookie.
+  fetch.mockImplementation(async (url, options) => {
+    const sameOrigin = new URL(url, window.location.origin).origin === window.location.origin;
+    const sendsCookie = options.credentials === "include" ||
+      (sameOrigin && options.credentials === "same-origin");
+    if (!sendsCookie) return result(401, { protection: { vercel_auth_enabled: true } });
+    if (url.endsWith("/login") || url.endsWith("/auth/refresh")) return result(200, login);
+    if (options.headers.Authorization !== "Bearer access-one") return result(401);
+    return result(200, { game_id: "account-game" });
+  });
+  try {
+    await client.authenticate("login", { email: login.email, password: "strong-pass" });
+    const response = await client.apiFetch("/set-teams", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offense: "MIN", defense: "DEN" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ game_id: "account-game" });
+    expect(expired).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith("/auth/refresh"))).toHaveLength(0);
+  } finally {
+    window.removeEventListener(AUTH_EXPIRED, expired);
+    if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+    else process.env.REACT_APP_API_URL = previousApiUrl;
+  }
 });
 
 test("concurrent expired requests share one refresh and retry with the new token", async () => {

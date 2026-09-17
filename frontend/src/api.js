@@ -96,7 +96,9 @@ export async function apiFetch(path, options = {}) {
   const usedToken = accessToken;
   const send = () => fetch(`${API}${path}`, {
     ...options,
-    credentials: "omit",
+    // Same-origin proxies may need a hosting access cookie (e.g. Vercel).
+    // The API still authenticates accounts with the bearer token below.
+    credentials: "same-origin",
     headers: {
       ...options.headers,
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
