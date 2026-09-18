@@ -47,9 +47,9 @@ class Settings:
     database_url: str = field(repr=False)
     frontend_url: str = "http://localhost:3000"
     cors_origins: tuple[str, ...] = ("http://localhost:3000",)
-    stripe_secret_key: str | None = None
+    stripe_secret_key: str | None = field(default=None, repr=False)
     stripe_price_id_tier2: str | None = None
-    stripe_webhook_secret: str | None = None
+    stripe_webhook_secret: str | None = field(default=None, repr=False)
     app_environment: str = "development"
     jwt_secret_key: str = field(default="", repr=False)
     jwt_issuer: str = "coordinaite"

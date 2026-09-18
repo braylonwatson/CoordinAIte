@@ -1,7 +1,5 @@
 from typing import Any
 
-from sqlalchemy.orm import Session
-
 from app.db.models import User
 
 
@@ -22,15 +20,27 @@ def stripe_value(obj: Any, key: str, default=None):
     return getattr(obj, key, default)
 
 
-def update_user_from_subscription_event(db: Session, subscription_obj: Any) -> None:
-    customer_id = stripe_value(subscription_obj, "customer")
-    if not customer_id:
-        return
+def stripe_id(value: Any) -> str | None:
+    return value if isinstance(value, str) else stripe_value(value, "id")
 
-    user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
-    if not user:
-        return
 
-    user.stripe_subscription_id = stripe_value(subscription_obj, "id")
-    sync_user_subscription_fields(user, stripe_value(subscription_obj, "status"))
-    db.commit()
+def is_tier2_price(price: Any) -> bool:
+    recurring = stripe_value(price, "recurring")
+    return (
+        stripe_value(price, "active") is True
+        and stripe_value(price, "currency") == "usd"
+        and stripe_value(price, "unit_amount") == 1000
+        and stripe_value(price, "billing_scheme") == "per_unit"
+        and not stripe_value(price, "transform_quantity")
+        and stripe_value(recurring, "interval") == "month"
+        and stripe_value(recurring, "interval_count") == 1
+        and stripe_value(recurring, "usage_type") == "licensed"
+    )
+
+
+def subscription_has_product(subscription: Any, product_id: str) -> bool:
+    items = stripe_value(stripe_value(subscription, "items"), "data", [])
+    return any(
+        stripe_id(stripe_value(stripe_value(item, "price"), "product")) == product_id
+        for item in items
+    )

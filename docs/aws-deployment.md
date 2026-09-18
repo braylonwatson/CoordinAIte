@@ -4,8 +4,9 @@ This release prepares the existing FastAPI application for ECS Fargate and
 Amazon RDS PostgreSQL. The old Render database is unavailable, and a fresh
 database has been authorized. The React frontend stays on Vercel.
 
-No AWS resources have been created. This is deployment configuration and code,
-not a completed cloud deployment.
+The AWS infrastructure and application have now been deployed. Sections 1-5
+remain the provisioning runbook; an existing installation should follow the
+release and billing steps without recreating its infrastructure.
 
 ## What runs where
 
@@ -208,7 +209,8 @@ Create a new account, predict and log a play, save and resume a game, reload the
 browser to confirm login persistence, and check two independent game sessions.
 Use the incognito isolation check from the earlier milestone.
 
-Stripe is initially unconfigured. In the application secret, fill:
+Stripe is initially unconfigured. Follow [the $10 Tier 2 billing runbook](stripe-billing.md)
+to create the price and AWS webhook and populate the application secret:
 `stripe_secret_key`, `stripe_price_id_tier2`, and `stripe_webhook_secret`.
 Point Stripe's webhook to the new API origin plus `/stripe/webhook`, then
 redeploy the API to load the updated secret. Test checkout and webhook delivery

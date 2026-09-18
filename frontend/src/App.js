@@ -158,6 +158,7 @@ function App() {
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [authError, setAuthError] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutPending, setCheckoutPending] = useState(() => new URLSearchParams(window.location.search).get("success") === "true");
   const [subscription, setSubscription] = useState({
     tier: "free",
     subscription_status: null,
@@ -213,6 +214,7 @@ function App() {
         tier2_access: Boolean(data.tier2_access),
         tier2_models_available: Boolean(data.tier2_models_available),
       });
+      return data;
     } catch (error) {
       console.error("Error fetching subscription status:", error);
     }
@@ -280,7 +282,7 @@ function App() {
     const canceled = params.get("canceled");
 
     if (success === "true") {
-      setSubscriptionMessage("Payment successful. Tier 2 access is being activated.");
+      setSubscriptionMessage("Checkout completed. Checking your subscription...");
       if (user?.user_id) {
         fetchSubscriptionStatus();
       }
@@ -292,6 +294,29 @@ function App() {
 
     return () => window.removeEventListener("resize", handleResize);
   }, [user, fetchSubscriptionStatus, fetchUserGames]);
+
+  useEffect(() => {
+    if (!user?.user_id || !checkoutPending) return;
+    setScreen("upgrade");
+    let stopped = false;
+    let timer;
+    let attempts = 0;
+    const checkSubscription = async () => {
+      const status = await fetchSubscriptionStatus();
+      if (stopped) return;
+      if (status?.tier2_access) {
+        setSubscriptionMessage("Tier 2 activated. Your subscription is ready.");
+        setCheckoutPending(false);
+      } else if (++attempts < 15) {
+        timer = setTimeout(checkSubscription, 2000);
+      } else {
+        setSubscriptionMessage("Your subscription is still being confirmed. Use Refresh subscription to check again.");
+        setCheckoutPending(false);
+      }
+    };
+    checkSubscription();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [user?.user_id, checkoutPending, fetchSubscriptionStatus]);
 
   const userGames = useMemo(() => historyGames, [historyGames]);
 
@@ -419,6 +444,7 @@ function App() {
     setShowSavePrompt(false);
     setSubscription({ tier: "free", subscription_status: null, tier2_access: false, tier2_models_available: false });
     setSubscriptionMessage("");
+    setCheckoutPending(false);
     setAuthError(errorMessage);
     resetGameState();
     setScreen("authChoice");
@@ -1494,7 +1520,7 @@ function App() {
                   <div style={styles.tierLabel}>Premium Plan</div>
                   <h2 style={styles.tierTitle}>Tier 2</h2>
                   <div style={{ color: "#000000", fontSize: "20px", fontWeight: "bold", marginBottom: "10px" }}>
-                    $20 / month
+                    $10 / month
                   </div>
                   <div style={styles.tierSubtitle}>
                     Built for users who want more than just run and pass prediction.
@@ -1589,6 +1615,15 @@ function App() {
                         disabled={checkoutLoading}
                       >
                         {checkoutLoading ? "Opening Checkout..." : "Subscribe to Tier 2"}
+                      </button>
+                    )}
+
+                    {user && (
+                      <button
+                        onClick={fetchSubscriptionStatus}
+                        style={styles.buttonSecondary}
+                      >
+                        Refresh subscription
                       </button>
                     )}
 

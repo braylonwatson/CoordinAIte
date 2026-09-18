@@ -100,7 +100,7 @@ def test_billing_rejects_anonymous_and_forged_user_ids(client):
 
 def test_checkout_uses_verified_account_for_stripe_metadata(client, app, monkeypatch):
     user = register(client)
-    app.state.settings = replace(app.state.settings, stripe_secret_key="test-placeholder", stripe_price_id_tier2="price_example")
+    app.state.settings = replace(app.state.settings, stripe_secret_key="test-placeholder", stripe_price_id_tier2="price_example", stripe_webhook_secret="whsec_test")
     calls = {}
 
     def create_customer(**kwargs):
@@ -113,6 +113,14 @@ def test_checkout_uses_verified_account_for_stripe_metadata(client, app, monkeyp
 
     monkeypatch.setattr("stripe.Customer.create", create_customer)
     monkeypatch.setattr("stripe.checkout.Session.create", create_checkout)
+    monkeypatch.setattr("stripe.Price.retrieve", lambda *a, **kw: {
+        "id": "price_example", "product": "prod_tier2", "active": True,
+        "currency": "usd", "unit_amount": 1000, "billing_scheme": "per_unit",
+        "recurring": {"interval": "month", "interval_count": 1, "usage_type": "licensed"},
+    })
+    empty = lambda **kw: SimpleNamespace(auto_paging_iter=lambda: iter([]))
+    monkeypatch.setattr("stripe.Subscription.list", empty)
+    monkeypatch.setattr("stripe.checkout.Session.list", empty)
     response = client.post("/create-checkout-session", json={})
     assert response.status_code == 200
     assert calls["customer"]["metadata"]["user_id"] == str(user["user_id"])
