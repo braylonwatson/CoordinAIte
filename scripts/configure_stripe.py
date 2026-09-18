@@ -31,14 +31,19 @@ def hidden_input(prompt):
         return getpass.getpass(prompt).strip()
 
 
+def stripe_value(obj, key, default=None):
+    # stripe-python 15 resources are StripeObjects, not dictionaries.
+    return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+
+
 def validate_price(price, live):
-    recurring = price.get("recurring") or {}
+    recurring = stripe_value(price, "recurring") or {}
     if not (
-        price.get("active") and price.get("livemode") is live
-        and price.get("currency") == "usd" and price.get("unit_amount") == 1000
-        and price.get("billing_scheme") == "per_unit" and not price.get("transform_quantity")
-        and recurring.get("interval") == "month" and recurring.get("interval_count") == 1
-        and recurring.get("usage_type") == "licensed"
+        stripe_value(price, "active") and stripe_value(price, "livemode") is live
+        and stripe_value(price, "currency") == "usd" and stripe_value(price, "unit_amount") == 1000
+        and stripe_value(price, "billing_scheme") == "per_unit" and not stripe_value(price, "transform_quantity")
+        and stripe_value(recurring, "interval") == "month" and stripe_value(recurring, "interval_count") == 1
+        and stripe_value(recurring, "usage_type") == "licensed"
     ):
         raise ValueError("The Tier 2 price must be active, $10 USD monthly, and in the selected Stripe mode.")
 
@@ -125,7 +130,7 @@ def configure(config, mode, product_id=None):
     stripe.api_key = key
     stripe.max_network_retries = 2
     account = stripe.Account.retrieve()
-    if mode == "live" and not account.get("charges_enabled"):
+    if mode == "live" and not stripe_value(account, "charges_enabled"):
         raise ValueError("Activate live payments in your Stripe Dashboard before running live setup.")
     if existing.get("stripe_account_id") and existing["stripe_account_id"] != account["id"]:
         raise ValueError("This deployment is already connected to a different Stripe account.")
@@ -134,7 +139,7 @@ def configure(config, mode, product_id=None):
         product_id = stripe.Price.retrieve(existing["stripe_price_id_tier2"])["product"]
     if product_id:
         product = stripe.Product.retrieve(product_id)
-        if not product.get("active") or product.get("livemode") is not (mode == "live"):
+        if not stripe_value(product, "active") or stripe_value(product, "livemode") is not (mode == "live"):
             raise ValueError("The selected Tier 2 product must be active and in the selected Stripe mode.")
     print(f"Stripe account: {account['id']}. Mode: {mode}. Tier 2: $10 USD/month.")
     price = ensure_price(mode == "live", product_id)

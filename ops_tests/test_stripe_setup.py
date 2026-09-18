@@ -6,6 +6,16 @@ import pytest
 from scripts import configure_stripe as setup
 
 
+def sdk_object(values):
+    return setup.stripe.StripeObject.construct_from(values, None)
+
+
+def sdk_page(values):
+    return setup.stripe.ListObject.construct_from({
+        "object": "list", "data": values, "has_more": False, "url": "/v1/test",
+    }, None)
+
+
 PRICE = {
     "id": "price_ten", "product": "prod_tier2", "active": True, "livemode": True,
     "currency": "usd", "unit_amount": 1000, "billing_scheme": "per_unit",
@@ -114,3 +124,40 @@ def test_full_setup_writes_billing_without_printing_keys(monkeypatch, capsys):
     for secret in ("sk_live_private", "whsec_private", "db-private", "jwt-private"):
         assert secret not in output
     assert "No payment was made" in output
+
+
+@pytest.mark.parametrize("reuse", [False, True])
+def test_setup_with_real_stripe_sdk_objects(monkeypatch, reuse):
+    config = {"region": "us-east-1", "api_url": "https://aws.example", "application_secret_arn": "secret-test"}
+    existing = {"database_password": "db-existing", "jwt_secret_key": "jwt-existing"}
+    if reuse:
+        existing.update(stripe_webhook_endpoint_id="we_test", stripe_account_id="acct_test",
+                        stripe_webhook_secret="whsec_existing")
+    client = Mock()
+    client.get_secret_value.return_value = {"SecretString": json.dumps(existing)}
+    monkeypatch.setattr(setup.boto3, "client", Mock(return_value=client))
+    monkeypatch.setattr(setup, "hidden_input", Mock(return_value="sk_live_placeholder"))
+    monkeypatch.setattr(setup.stripe.Account, "retrieve", Mock(return_value=sdk_object({
+        "id": "acct_test", "charges_enabled": True,
+    })))
+    monkeypatch.setattr(setup.stripe.Product, "retrieve", Mock(return_value=sdk_object({
+        "id": "prod_tier2", "active": True, "livemode": True,
+    })))
+    monkeypatch.setattr(setup.stripe.Price, "list", Mock(return_value=sdk_page([PRICE] if reuse else [])))
+    monkeypatch.setattr(setup.stripe.Price, "create", Mock(return_value=sdk_object(PRICE)))
+    monkeypatch.setattr(setup.stripe.Subscription, "list", Mock(return_value=sdk_page([{
+        "id": "sub_old", "status": "active", "items": {"data": [{
+            "price": {"id": "price_twenty", "product": "prod_tier2"},
+        }]},
+    }])))
+    endpoint = {"id": "we_test", "url": config["api_url"] + "/stripe/webhook",
+                "enabled_events": setup.EVENTS, "secret": "whsec_new"}
+    monkeypatch.setattr(setup.stripe.WebhookEndpoint, "list", Mock(return_value=sdk_page([endpoint] if reuse else [])))
+    monkeypatch.setattr(setup.stripe.WebhookEndpoint, "create", Mock(return_value=sdk_object(endpoint)))
+    monkeypatch.setattr(setup.stripe.WebhookEndpoint, "modify", Mock(return_value=sdk_object(endpoint)))
+    setup.configure(config, "live", "prod_tier2")
+    written = json.loads(client.put_secret_value.call_args.kwargs["SecretString"])
+    assert written["stripe_price_id_tier2"] == "price_ten"
+    assert written["stripe_webhook_secret"] == ("whsec_existing" if reuse else "whsec_new")
+    assert written["database_password"] == "db-existing"
+    assert written["jwt_secret_key"] == "jwt-existing"
