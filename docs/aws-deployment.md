@@ -199,6 +199,35 @@ This proxy keeps the refresh cookie on the frontend's own origin, avoiding a
 dependency on third-party cookies. AWS sets it as Secure, HttpOnly,
 SameSite=Lax, Path=/api/auth. Local development retains Path=/auth.
 
+### Allow a Vercel branch preview to sign in
+
+The backend checks the browser's exact `Origin` on login, signup, refresh, and
+logout. A new Vercel preview can therefore load correctly and still return
+`Untrusted authentication request.` when its origin is not configured. The
+frontend must also send `X-CSRF-Protection: 1`; keep both checks enabled.
+
+Keep `frontend_url` set to production. The approved branch preview is recorded in
+`infra/aws/preview-origins.auto.tfvars`, which Terraform loads automatically:
+
+```hcl
+additional_frontend_origins = [
+  "https://football-ai-git-perf-realtime-pr-9a97f4-braylonwatsons-projects.vercel.app",
+]
+```
+
+Use the URL actually open in the browser, without a trailing slash or path.
+Allowing the branch alias does not also allow individual deployment URLs. These
+previews use the same AWS backend and account data as production. Only add
+origins you control. Keep this allowlist in one file, and remove preview entries
+when testing is complete.
+
+Review and apply a Terraform plan, then run `python scripts/aws_setup.py export`.
+Refresh `AWS_DEPLOY_CONFIG` if you use GitHub Actions. Terraform registers new
+task definitions, but the service ignores task-definition changes: a subsequent
+backend release using the refreshed configuration is required to activate the
+allowlist. Keep the existing image when deploying only this configuration fix.
+Do not change `FRONTEND_URL` to the preview or use a wildcard for Vercel domains.
+
 This session's Vercel connection returned 403 for the existing project. Project
 access must be resolved or this step completed from your Vercel dashboard.
 GitHub integration writes were also denied; local Git pushes work.

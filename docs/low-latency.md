@@ -62,16 +62,35 @@ the same smoke check in the Docker image against PostgreSQL, alongside backend
 and frontend tests and Terraform validation. Local socket timings are not
 representative of the deployed AWS network or RDS.
 
+## AWS REST baseline before release
+
+On September 19, 2026, the existing backend at `coordinaite-api:12` (image tag
+`6365daf-20260918182235`) completed 30 sequential Tier 1 guest predictions from
+the agent runtime through its configured network proxy. The first prediction
+took 383.471 ms; the remaining 29 had a median of 143.199 ms and p95 of
+186.023 ms. One 512-CPU-unit / 1024-MiB task was running. These are client
+round-trip measurements, so they are not comparable to the model-only table
+above or a coach's browser without measuring that client too.
+
+The [baseline report](benchmarks/aws-rest-baseline-2026-09-19.json) records the
+configuration and sample limits. Repeat the same command and client path after
+the performance release before claiming an improvement. This small sample is
+not a load test; it used one new private guest game and left existing games and
+accounts untouched.
+
 ## Deploy the REST improvements first
 
 1. Review/merge this branch into the AWS deployment branch. Run the backend,
    frontend, Docker/Postgres, and Terraform CI jobs.
 2. Leave `realtime_enabled = false` and `REACT_APP_WS_URL` blank. Apply the
-   reviewed Terraform plan if updating task environment and regenerate
-   `release-config.json`; the release script clones that referenced task revision.
+   reviewed Terraform plan to retain the approved preview origin from
+   `infra/aws/preview-origins.auto.tfvars` and regenerate `release-config.json`.
+   Update `AWS_DEPLOY_CONFIG` if using Actions; the release script clones that
+   referenced task revision, which must contain the current origin allowlist.
 3. Follow `docs/aws-deployment.md` to build/push the backend image and run
-   `python scripts/deploy_aws.py --image $image --tasks 2`. Two tasks add compute
-   cost; models stay loaded on both, and game state remains shared in RDS.
+   `python scripts/deploy_aws.py --image $image`. This preserves the existing task
+   count for the first rollout. Review capacity and additional compute cost
+   before using `--tasks 2`; game state remains shared in RDS across tasks.
 4. Deploy the frontend from the same code, keeping its working `/api` proxy and
    cookie configuration. Prediction uses REST until the live URL is configured.
 5. Check login, guest isolation, Tier 2 entitlement, prediction, log-play,

@@ -18,6 +18,19 @@ variable "frontend_url" {
     error_message = "Supply an HTTPS origin without a path or trailing slash."
   }
 }
+variable "additional_frontend_origins" {
+  type        = list(string)
+  default     = []
+  nullable    = false
+  description = "Additional trusted HTTPS origins, such as a specific Vercel branch preview. Production is always included."
+  validation {
+    condition = alltrue([
+      for origin in var.additional_frontend_origins :
+      can(regex("^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]+)?$", origin))
+    ])
+    error_message = "Use explicit HTTPS origins without wildcards, credentials, paths, trailing slashes, or query strings."
+  }
+}
 variable "github_repository" {
   type    = string
   default = "braylonwatson/CoordinAIte"

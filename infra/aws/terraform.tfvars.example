@@ -2,6 +2,9 @@
 region       = "us-east-1"
 frontend_url = "https://YOUR-PROJECT.vercel.app"
 
+# Approved preview origins are in preview-origins.auto.tfvars.
+# Keep frontend_url set to production; remove preview entries when testing ends.
+
 # Reuse an existing GitHub OIDC provider if this account already has one.
 # github_oidc_provider_arn = "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
 

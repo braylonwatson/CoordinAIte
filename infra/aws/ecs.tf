@@ -20,7 +20,7 @@ locals {
     { name = "DATABASE_SSLMODE", value = "verify-full" },
     { name = "DATABASE_SSLROOTCERT", value = "/app/certs/rds-bundle.pem" },
     { name = "FRONTEND_URL", value = var.frontend_url },
-    { name = "CORS_ORIGINS", value = var.frontend_url },
+    { name = "CORS_ORIGINS", value = join(",", distinct(concat([var.frontend_url], var.additional_frontend_origins))) },
     { name = "AUTH_COOKIE_SECURE", value = "true" },
     { name = "AUTH_COOKIE_SAMESITE", value = "lax" },
     { name = "AUTH_COOKIE_PATH", value = "/api/auth" },
