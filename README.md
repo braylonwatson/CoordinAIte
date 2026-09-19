@@ -53,3 +53,9 @@ The backend can now be packaged as a container and deployed to ECS Fargate with
 RDS PostgreSQL. See [the AWS deployment guide](docs/aws-deployment.md) for the
 Terraform configuration, migration task, Vercel proxy, and GitHub Actions release
 workflow. Cloud resources have not been provisioned by this code change.
+
+# Prediction latency
+
+See [the latency rollout guide](docs/low-latency.md) for numeric-array inference,
+the optional authenticated WebSocket endpoint, AWS configuration, benchmarks,
+and rollback instructions. Live transport is disabled by default.

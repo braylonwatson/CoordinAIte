@@ -1,3 +1,5 @@
+from time import perf_counter
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
@@ -87,7 +89,9 @@ def make_prediction(
     model_bundle: ModelBundle,
     access: GameAccess,
 ):
+    started = perf_counter()
     game = get_game_session(db, data.game_id, access, for_update=True)
+    loaded = perf_counter()
     if tier == 2:
         if not access.user:
             raise HTTPException(
@@ -113,9 +117,20 @@ def make_prediction(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    inferred = perf_counter()
     persist_tracker(game, tracker)
     db.commit()
-    result.update({"game_id": game.id, "state_version": game.version})
+    committed = perf_counter()
+    result.update({
+        "game_id": game.id, "state_version": game.version,
+        "pending": tracker.pending_play_context,
+        "timing_ms": {
+            "state_load": round((loaded - started) * 1000, 3),
+            "inference": round((inferred - loaded) * 1000, 3),
+            "persist": round((committed - inferred) * 1000, 3),
+            "prediction_total": round((committed - started) * 1000, 3),
+        },
+    })
     return result
 
 

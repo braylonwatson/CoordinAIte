@@ -1,3 +1,6 @@
+from functools import lru_cache
+
+import numpy as np
 import pandas as pd
 
 
@@ -50,7 +53,7 @@ def build_situational_flags(
     }
 
 
-def build_feature_row(
+def build_feature_values(
     down: int,
     ydstogo: int,
     yardline_100: int,
@@ -62,7 +65,7 @@ def build_feature_row(
     prev_play_pass: int,
     game_pass_rate: float,
     drive_pass_rate: float
-) -> pd.DataFrame:
+) -> dict:
     row = {
         "down": down,
         "ydstogo": ydstogo,
@@ -88,4 +91,36 @@ def build_feature_row(
         )
     )
 
-    return pd.DataFrame([row])
+    return row
+
+
+def build_feature_row(*args, **kwargs) -> pd.DataFrame:
+    """Compatibility helper for offline consumers; inference uses numeric arrays."""
+    return pd.DataFrame([build_feature_values(*args, **kwargs)])
+
+
+@lru_cache(maxsize=16)
+def _column_plan(columns: tuple[str, ...]):
+    if len(set(columns)) != len(columns):
+        raise ValueError("Model feature columns must be unique")
+    return tuple(
+        (name, "posteam", name[len("posteam_"):]) if name.startswith("posteam_")
+        else (name, "defteam", name[len("defteam_"):]) if name.startswith("defteam_")
+        else (name, None, None)
+        for name in columns
+    )
+
+
+def encode_feature_values(values: dict, columns) -> np.ndarray:
+    """Match the saved training schema, including its dropped baseline teams.
+
+    Never fit one-hot encoding to one request: drop_first on a one-row frame
+    drops both team indicators. Each call owns its buffer for thread safety.
+    Missing numeric features retain the historical reindex(fill_value=0) rule.
+    """
+    plan = _column_plan(tuple(columns))
+    return np.fromiter(
+        (float(values.get(field) == category) if field else float(values.get(name, 0))
+         for name, field, category in plan),
+        dtype=np.float32, count=len(plan),
+    ).reshape(1, len(plan))

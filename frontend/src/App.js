@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import BackgroundParticles from "./BackgroundParticles";
 
-import { apiFetch, authenticate, AUTH_EXPIRED, restoreSession, setGuestGameToken, signOut } from "./api";
+import { apiFetch, authenticate, AUTH_EXPIRED, closeLivePredictions, restoreSession, setGuestGameToken, signOut } from "./api";
 
 const TEAM_OPTIONS = [
   { value: "ARI", label: "Arizona Cardinals" },
@@ -152,6 +152,8 @@ function App() {
   const [defense, setDefense] = useState("");
   const [setupError, setSetupError] = useState("");
   const [predictionError, setPredictionError] = useState("");
+  const [predicting, setPredicting] = useState(false);
+  const predictionBusy = useRef(false);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [isGuest, setIsGuest] = useState(() => sessionStorage.getItem("coordinaite_guest") === "true");
@@ -167,6 +169,9 @@ function App() {
   });
   const [subscriptionMessage, setSubscriptionMessage] = useState("");
   const [activeGameId, setActiveGameId] = useState(null);
+  const currentGame = useRef(activeGameId);
+  currentGame.current = activeGameId;
+  useEffect(() => () => closeLivePredictions(), [activeGameId]);
 
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -533,6 +538,7 @@ function App() {
   };
 
   const handlePredict = async () => {
+    if (predictionBusy.current) return;
     setPredictionError("");
 
     if (!teamsSet || !offense || !defense || !activeGameId) {
@@ -547,10 +553,13 @@ function App() {
 
     const endpoint = useTier2 ? "/predict-tier2" : "/predict";
 
+    predictionBusy.current = true;
+    setPredicting(true);
     try {
       const payload = { ...form, game_id: activeGameId };
 
       const res = await apiFetch(`${endpoint}`, {
+        livePrediction: true,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -559,6 +568,7 @@ function App() {
       });
 
       const data = await res.json();
+      if (currentGame.current !== activeGameId) return;
 
       if (!res.ok) {
         setPrediction(null);
@@ -567,11 +577,19 @@ function App() {
       }
 
       setPrediction(data);
-      refreshData(activeGameId);
+      // Predict only updates pending state, not the play log or summary.
+      // Current servers include it in the reply; old servers retain fallback.
+      if (data.pending) setPending(data.pending);
+      else refreshData(activeGameId);
     } catch (error) {
+      if (currentGame.current !== activeGameId) return;
       console.error("Error predicting play:", error);
       setPrediction(null);
-      setPredictionError("Could not connect to the server.");
+      setPredictionError(error.message || "Could not connect to the server.");
+      refreshData(activeGameId);
+    } finally {
+      predictionBusy.current = false;
+      setPredicting(false);
     }
   };
 
@@ -1908,8 +1926,8 @@ function App() {
               )}
 
               <div style={styles.buttonRow}>
-                <button onClick={handlePredict} style={styles.buttonPrimary}>
-                  Predict Next Play
+                <button onClick={handlePredict} style={styles.buttonPrimary} disabled={predicting}>
+                  {predicting ? "Predicting…" : "Predict Next Play"}
                 </button>
                 <button onClick={handleNewDrive} style={styles.buttonSecondary}>
                   Start New Drive
@@ -2190,5 +2208,4 @@ function App() {
 }
 
 export default App;
-
 

@@ -62,7 +62,8 @@ resource "aws_ecs_task_definition" "api" {
     user                   = "10001"
     portMappings           = [{ containerPort = 8000, protocol = "tcp" }]
     environment = concat(local.common_environment, [
-      { name = "DATABASE_USER", value = "coordinaite_app" }
+      { name = "DATABASE_USER", value = "coordinaite_app" },
+      { name = "REALTIME_ENABLED", value = tostring(var.realtime_enabled) }
     ])
     secrets          = local.application_secrets
     logConfiguration = local.logging
@@ -130,7 +131,15 @@ resource "aws_ecs_service" "api" {
     container_port   = 8000
     target_group_arn = aws_lb_target_group.api.arn
   }
-  depends_on = [aws_lb_listener.api, aws_iam_role_policy.execution]
+  dynamic "load_balancer" {
+    for_each = var.realtime_enabled ? [1] : []
+    content {
+      container_name   = "api"
+      container_port   = 8000
+      target_group_arn = aws_lb_target_group.realtime[0].arn
+    }
+  }
+  depends_on = [aws_lb_listener.api, aws_iam_role_policy.execution, aws_lb_listener_rule.realtime]
   lifecycle {
     # The release script owns application revisions and task count.
     ignore_changes = [task_definition, desired_count]

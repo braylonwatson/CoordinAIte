@@ -42,8 +42,13 @@ def get_optional_auth_session(
         if request.headers.get("Authorization"):
             raise unauthorized()
         return None
+    return authenticate_access_token(credentials.credentials, db, settings)
+
+
+def authenticate_access_token(token: str, db: Session, settings: Settings) -> AuthSession:
+    """Shared by HTTP and WebSocket commands; recheck revocation every time."""
     try:
-        claims = decode_access_token(credentials.credentials, settings)
+        claims = decode_access_token(token, settings)
     except jwt.InvalidTokenError as exc:
         raise unauthorized() from exc
     session = db.get(AuthSession, claims["sid"])

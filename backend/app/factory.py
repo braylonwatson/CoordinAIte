@@ -1,3 +1,5 @@
+from time import perf_counter
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -35,9 +37,11 @@ def create_app(
 
     @application.middleware("http")
     async def prevent_account_response_caching(request, call_next):
+        started = perf_counter()
         response = await call_next(request)
         # Game responses can contain private account or guest state.
         response.headers.setdefault("Cache-Control", "no-store")
+        response.headers["Server-Timing"] = f"app;dur={(perf_counter() - started) * 1000:.3f}"
         return response
 
     application.add_middleware(
@@ -46,6 +50,7 @@ def create_app(
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Game-Token", "X-CSRF-Protection"],
+        expose_headers=["Server-Timing"],
     )
     application.include_router(api_router)
     return application
