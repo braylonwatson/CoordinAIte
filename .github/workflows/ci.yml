@@ -43,14 +43,14 @@ jobs:
           JWT_SECRET_KEY: ci-only-signing-key-not-valid-for-production-123456789
         run: |
           docker run --rm --network host -e DATABASE_URL coordinaite:ci python -m alembic -c alembic.ini upgrade head
-          docker run -d --name coordinaite-ci --read-only --network host -e DATABASE_URL -e JWT_SECRET_KEY coordinaite:ci
+          docker run -d --name coordinaite-ci --read-only --network host -e DATABASE_URL -e JWT_SECRET_KEY -e REALTIME_ENABLED=true coordinaite:ci
           for attempt in $(seq 1 30); do
             if curl --fail --silent --max-time 3 http://127.0.0.1:8000/health/ready; then
               break
             fi
             sleep 3
           done
-          python scripts/smoke_api.py http://127.0.0.1:8000
+          python scripts/smoke_api.py http://127.0.0.1:8000 --ws-url ws://127.0.0.1:8000/ws/predictions
       - name: Container logs on failure
         if: failure()
         run: docker logs coordinaite-ci

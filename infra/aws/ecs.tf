@@ -20,7 +20,7 @@ locals {
     { name = "DATABASE_SSLMODE", value = "verify-full" },
     { name = "DATABASE_SSLROOTCERT", value = "/app/certs/rds-bundle.pem" },
     { name = "FRONTEND_URL", value = var.frontend_url },
-    { name = "CORS_ORIGINS", value = var.frontend_url },
+    { name = "CORS_ORIGINS", value = join(",", distinct(concat([var.frontend_url], var.additional_frontend_origins))) },
     { name = "AUTH_COOKIE_SECURE", value = "true" },
     { name = "AUTH_COOKIE_SAMESITE", value = "lax" },
     { name = "AUTH_COOKIE_PATH", value = "/api/auth" },
@@ -62,7 +62,8 @@ resource "aws_ecs_task_definition" "api" {
     user                   = "10001"
     portMappings           = [{ containerPort = 8000, protocol = "tcp" }]
     environment = concat(local.common_environment, [
-      { name = "DATABASE_USER", value = "coordinaite_app" }
+      { name = "DATABASE_USER", value = "coordinaite_app" },
+      { name = "REALTIME_ENABLED", value = tostring(var.realtime_enabled) }
     ])
     secrets          = local.application_secrets
     logConfiguration = local.logging
@@ -130,7 +131,15 @@ resource "aws_ecs_service" "api" {
     container_port   = 8000
     target_group_arn = aws_lb_target_group.api.arn
   }
-  depends_on = [aws_lb_listener.api, aws_iam_role_policy.execution]
+  dynamic "load_balancer" {
+    for_each = var.realtime_enabled ? [1] : []
+    content {
+      container_name   = "api"
+      container_port   = 8000
+      target_group_arn = aws_lb_target_group.realtime[0].arn
+    }
+  }
+  depends_on = [aws_lb_listener.api, aws_iam_role_policy.execution, aws_lb_listener_rule.realtime]
   lifecycle {
     # The release script owns application revisions and task count.
     ignore_changes = [task_definition, desired_count]

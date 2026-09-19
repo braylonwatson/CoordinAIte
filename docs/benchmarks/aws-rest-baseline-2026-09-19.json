@@ -1,0 +1,37 @@
+{
+  "measured_at_utc": "2026-09-19T21:45:43.631332+00:00",
+  "phase": "before-performance-release",
+  "api_url": "https://hd6jux70ig.execute-api.us-east-1.amazonaws.com",
+  "task_definition": "coordinaite-api:12",
+  "image_tag": "6365daf-20260918182235",
+  "source_commit_prefix": "6365daf",
+  "ecs_region": "us-east-1",
+  "ecs_task_count": 1,
+  "ecs_cpu_units": 512,
+  "ecs_memory_mib": 1024,
+  "tier": "Tier 1 guest",
+  "client_location": "Agent runtime through its configured network proxy; geographic location not established",
+  "notes": [
+    "One private guest game; no existing account or game modified.",
+    "30 sequential predictions with a 150 ms pause outside each measurement.",
+    "HTTP connection reused; first_request_ms is the first prediction after game creation.",
+    "Warm percentiles use 29 samples; this is a small baseline, not a load test or a latency guarantee.",
+    "Current backend does not return stage timings; repeat from this client after release for comparison."
+  ],
+  "measurement": {
+    "concurrency": 1,
+    "requests_per_connection": 30,
+    "http": {
+      "first_request_ms": [
+        383.4710470000573
+      ],
+      "warm": {
+        "client_round_trip": {
+          "p50_ms": 143.199,
+          "p95_ms": 186.023,
+          "p99_ms": 190.624
+        }
+      }
+    }
+  }
+}

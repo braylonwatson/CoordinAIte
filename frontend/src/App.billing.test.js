@@ -5,7 +5,7 @@ import { apiFetch, restoreSession } from "./api";
 jest.mock("./BackgroundParticles", () => () => null);
 jest.mock("./api", () => ({
   apiFetch: jest.fn(), restoreSession: jest.fn(), signOut: jest.fn(),
-  setGuestGameToken: jest.fn(), AUTH_EXPIRED: "auth-expired",
+  setGuestGameToken: jest.fn(), closeLivePredictions: jest.fn(), AUTH_EXPIRED: "auth-expired",
 }));
 
 const status = (active) => ({

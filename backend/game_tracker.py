@@ -3,10 +3,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import joblib
-import pandas as pd
+import numpy as np
 from pathlib import Path
 
-from feature_builder import build_feature_row, safe_rate
+from feature_builder import build_feature_values, encode_feature_values, safe_rate
 from recommendation_engine import get_confidence_tier
 
 
@@ -64,7 +64,7 @@ class ModelBundle:
             "pass_concept_predictor_model.pkl",
             "pass_concept_model_columns.pkl",
         )
-        return cls(
+        bundle = cls(
             model=model,
             model_columns=model_columns,
             direction_model=direction_model,
@@ -74,6 +74,23 @@ class ModelBundle:
             pass_concept_model=pass_model,
             pass_concept_model_columns=pass_columns,
         )
+        # Training artifacts may carry n_jobs=-1. Limit tiny, concurrent inference
+        # calls to one CPU thread; configure only before serving any requests.
+        for estimator, columns in (
+            (model, model_columns), (direction_model, direction_columns),
+            (run_model, run_columns), (pass_model, pass_columns),
+        ):
+            if estimator is None:
+                continue
+            base = getattr(estimator, "estimator", estimator)
+            if hasattr(base, "get_booster"):
+                names = base.get_booster().feature_names
+                if names is not None and list(names) != list(columns):
+                    raise ValueError("Saved model feature columns do not match its training schema")
+                base.set_params(n_jobs=1)
+            # Warm all four models once, including the rarely selected concept.
+            estimator.predict_proba(np.zeros((1, len(columns)), dtype=np.float32))
+        return bundle
 
     def tier2_available(self) -> bool:
         return all(
@@ -608,7 +625,7 @@ class GameTracker:
         self.drive_total_plays = 0
         self.drive_total_passes = 0
 
-    def _build_base_feature_df(
+    def _build_base_feature_values(
         self,
         down,
         ydstogo,
@@ -620,7 +637,7 @@ class GameTracker:
         game_pass_rate = self._current_game_pass_rate()
         drive_pass_rate = self._current_drive_pass_rate()
 
-        df = build_feature_row(
+        values = build_feature_values(
             down=down,
             ydstogo=ydstogo,
             yardline_100=yardline_100,
@@ -634,8 +651,7 @@ class GameTracker:
             drive_pass_rate=drive_pass_rate,
         )
 
-        df = pd.get_dummies(df, columns=["posteam", "defteam"], drop_first=True)
-        return df, game_pass_rate, drive_pass_rate
+        return values, game_pass_rate, drive_pass_rate
 
     def _prepare_features_for_columns(
         self,
@@ -647,7 +663,7 @@ class GameTracker:
         qtr,
         score_differential,
     ):
-        df, game_pass_rate, drive_pass_rate = self._build_base_feature_df(
+        values, game_pass_rate, drive_pass_rate = self._build_base_feature_values(
             down=down,
             ydstogo=ydstogo,
             yardline_100=yardline_100,
@@ -655,18 +671,19 @@ class GameTracker:
             qtr=qtr,
             score_differential=score_differential,
         )
-        df = df.reindex(columns=model_columns, fill_value=0)
+        df = encode_feature_values(values, model_columns)
         return df, game_pass_rate, drive_pass_rate
 
     def _predict_label_and_confidence(self, model, df):
-        pred = model.predict(df)[0]
-
-        confidence = None
         if hasattr(model, "predict_proba"):
             probs = model.predict_proba(df)[0]
-            confidence = float(max(probs))
-
-        return pred, confidence
+            index = int(np.argmax(probs))
+            if hasattr(model, "label_encoder"):
+                pred = model.label_encoder.inverse_transform([index])[0]
+            else:
+                pred = model.classes_[index]
+            return pred, float(probs[index])
+        return model.predict(df)[0], None
 
     def predict_next_play(
         self,
@@ -690,10 +707,10 @@ class GameTracker:
             score_differential=score_differential,
         )
 
-        pred = self.model.predict(df)[0]
         prob = self.model.predict_proba(df)[0]
 
-        prediction = "PASS" if pred == 1 else "RUN"
+        # XGBoost binary predict uses a strict > 0.5 threshold (ties are RUN).
+        prediction = "PASS" if prob[1] > 0.5 else "RUN"
         run_prob = float(prob[0])
         pass_prob = float(prob[1])
         confidence = max(run_prob, pass_prob)

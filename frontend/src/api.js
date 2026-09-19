@@ -1,4 +1,7 @@
+import { LivePredictionClient, LiveUnavailable } from "./realtime";
+
 const API = (process.env.REACT_APP_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const live = new LivePredictionClient(process.env.REACT_APP_WS_URL || "");
 export const AUTH_EXPIRED = "coordinaite:auth-expired";
 
 // Access tokens live in memory. Only the browser handles the HttpOnly refresh
@@ -12,6 +15,7 @@ let generation = 0;
 const cookieHeaders = { "Content-Type": "application/json", "X-CSRF-Protection": "1" };
 
 export function clearSession() {
+  live.close();
   generation += 1;
   accessToken = null;
   accountId = null;
@@ -19,7 +23,12 @@ export function clearSession() {
 }
 
 export function setGuestGameToken(token) {
+  if (guestToken !== (token || null)) live.close();
   guestToken = token || null;
+}
+
+export function closeLivePredictions() {
+  live.close();
 }
 
 function rememberLogin(data) {
@@ -94,17 +103,39 @@ export async function signOut() {
 export async function apiFetch(path, options = {}) {
   const startedAt = generation;
   const usedToken = accessToken;
-  const send = () => fetch(`${API}${path}`, {
-    ...options,
-    // Same-origin proxies may need a hosting access cookie (e.g. Vercel).
-    // The API still authenticates accounts with the bearer token below.
-    credentials: "same-origin",
-    headers: {
-      ...options.headers,
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...(guestToken ? { "X-Game-Token": guestToken } : {}),
-    },
-  });
+  const usedGuest = guestToken;
+  const { livePrediction = false, ...httpOptions } = options;
+  const send = async () => {
+    if (livePrediction && ["/predict", "/predict-tier2"].includes(path)) {
+      try {
+        const message = await live.request({
+          type: path.slice(1), payload: JSON.parse(httpOptions.body),
+          access_token: accessToken, guest_token: guestToken,
+        }, () => generation === startedAt && guestToken === usedGuest);
+        return {
+          status: message.status, ok: message.status >= 200 && message.status < 300,
+          json: async () => message.data || { detail: message.detail },
+        };
+      } catch (error) {
+        if (!(error instanceof LiveUnavailable)) throw error;
+        // Only connection failures BEFORE send may fall back to HTTP.
+      }
+    }
+    if (generation !== startedAt || guestToken !== usedGuest) {
+      throw new Error("Account or game changed while the request was running.");
+    }
+    return fetch(`${API}${path}`, {
+      ...httpOptions,
+      // Same-origin proxies may need a hosting access cookie (e.g. Vercel).
+      // The API still authenticates accounts with the bearer token below.
+      credentials: "same-origin",
+      headers: {
+        ...httpOptions.headers,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(guestToken ? { "X-Game-Token": guestToken } : {}),
+      },
+    });
+  };
   let response = await send();
   if (generation !== startedAt) throw new Error("Account changed while the request was running.");
   if (response.status === 401 && usedToken) {

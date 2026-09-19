@@ -7,6 +7,8 @@ import urllib.request
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("origin")
+    parser.add_argument("--ws-url", help="Optional direct WebSocket endpoint to verify")
+    parser.add_argument("--ws-origin", default="http://localhost:3000")
     args = parser.parse_args()
     origin = args.origin.rstrip("/")
 
@@ -22,12 +24,26 @@ def main():
     assert request("/health/ready")["status"] == "ready"
     game = request("/set-teams", {"offense": "KC", "defense": "BUF"})
     headers = {"X-Game-Token": game["guest_token"]}
-    prediction = request("/predict", {
+    payload = {
         "game_id": game["game_id"], "down": 1, "ydstogo": 10,
         "yardline_100": 50, "game_seconds_remaining": 900,
         "qtr": 1, "score_differential": 0,
-    }, headers)
+    }
+    prediction = request("/predict", payload, headers)
     assert prediction["game_id"] == game["game_id"]
+    if args.ws_url:
+        from websockets.sync.client import connect
+        with connect(args.ws_url, origin=args.ws_origin, open_timeout=10) as socket:
+            socket.send(json.dumps({
+                "id": "smoke-live", "type": "predict", "payload": payload,
+                "guest_token": game["guest_token"],
+            }))
+            reply = json.loads(socket.recv(timeout=20))
+            assert reply["id"] == "smoke-live" and reply["status"] == 200
+            live = reply["data"]
+            assert live["state_version"] == prediction["state_version"] + 1
+            assert live["pending"] == request("/pending?game_id=" + game["game_id"], headers=headers)
+        print("WebSocket upgrade, prediction, and HTTP state readback passed.")
     request("/log-play", {
         "game_id": game["game_id"], "actual_play_type": "PASS", "yards_gained": 8,
     }, headers)

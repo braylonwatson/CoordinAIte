@@ -59,6 +59,7 @@ class Settings:
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
     auth_cookie_path: str = "/auth"
+    realtime_enabled: bool = False
 
     def validate_auth(self) -> None:
         if len(self.jwt_secret_key.encode("utf-8")) < 32:
@@ -106,4 +107,5 @@ class Settings:
             ).lower() == "true",
             auth_cookie_samesite=os.getenv("AUTH_COOKIE_SAMESITE", "lax").lower(),
             auth_cookie_path=os.getenv("AUTH_COOKIE_PATH", "/auth"),
+            realtime_enabled=os.getenv("REALTIME_ENABLED", "false").lower() == "true",
         )
