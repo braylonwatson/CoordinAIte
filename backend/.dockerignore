@@ -13,6 +13,7 @@
 !defense_strategy_engine.py
 !recommendation_engine.py
 !*.pkl
+!training_metadata.json
 !scripts/
 !scripts/**
 **/__pycache__/

@@ -10,9 +10,9 @@ class EncodedClassifier:
         self.estimator = estimator
         self.label_encoder = LabelEncoder()
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         y_encoded = self.label_encoder.fit_transform(y)
-        self.estimator.fit(X, y_encoded)
+        self.estimator.fit(X, y_encoded, sample_weight=sample_weight)
         return self
 
     def predict(self, X):
