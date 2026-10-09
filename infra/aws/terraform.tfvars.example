@@ -1,6 +1,7 @@
 # Copy to terraform.tfvars and supply your actual frontend origin.
 region       = "us-east-1"
 frontend_url = "https://YOUR-PROJECT.vercel.app"
+owner_emails = ["YOUR-OWNER-EMAIL"]
 
 # Approved preview origins are in preview-origins.auto.tfvars.
 # Keep frontend_url set to production; remove preview entries when testing ends.

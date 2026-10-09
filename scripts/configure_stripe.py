@@ -21,6 +21,7 @@ EVENTS = [
     "customer.subscription.deleted",
     "invoice.payment_failed",
     "invoice.payment_succeeded",
+    "charge.refunded",
 ]
 
 

@@ -75,6 +75,7 @@ def initialize_secret(config):
         "stripe_secret_key": "",
         "stripe_price_id_tier2": "",
         "stripe_webhook_secret": "",
+        "smtp_password": "",
     }))
     print("Initialized database and JWT credentials in Secrets Manager. Stripe settings are empty.")
 

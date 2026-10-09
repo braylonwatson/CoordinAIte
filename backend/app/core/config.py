@@ -50,6 +50,12 @@ class Settings:
     stripe_secret_key: str | None = field(default=None, repr=False)
     stripe_price_id_tier2: str | None = None
     stripe_webhook_secret: str | None = field(default=None, repr=False)
+    owner_emails: tuple[str, ...] = ()
+    support_email: str = "support@coordinaite.net"
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = field(default=None, repr=False)
     app_environment: str = "development"
     jwt_secret_key: str = field(default="", repr=False)
     jwt_issuer: str = "coordinaite"
@@ -60,6 +66,7 @@ class Settings:
     auth_cookie_samesite: str = "lax"
     auth_cookie_path: str = "/auth"
     realtime_enabled: bool = False
+    redis_url: str | None = field(default=None, repr=False)
 
     def validate_auth(self) -> None:
         if len(self.jwt_secret_key.encode("utf-8")) < 32:
@@ -76,6 +83,10 @@ class Settings:
             raise RuntimeError("CORS_ORIGINS must list explicit frontend origins.")
         if self.auth_cookie_path not in {"/auth", "/api/auth"}:
             raise RuntimeError("AUTH_COOKIE_PATH must be /auth or /api/auth.")
+        if self.redis_url and not self.redis_url.startswith(("redis://", "rediss://")):
+            raise RuntimeError("REDIS_URL must use redis:// or rediss://.")
+        if self.app_environment == "production" and self.redis_url and not self.redis_url.startswith("rediss://"):
+            raise RuntimeError("Production Redis connections must use TLS (rediss://).")
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -96,6 +107,16 @@ class Settings:
             stripe_secret_key=os.getenv("STRIPE_SECRET_KEY"),
             stripe_price_id_tier2=os.getenv("STRIPE_PRICE_ID_TIER2"),
             stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET"),
+            owner_emails=tuple(
+                email.strip().lower()
+                for email in os.getenv("OWNER_EMAILS", "").split(",")
+                if email.strip()
+            ),
+            support_email=os.getenv("SUPPORT_EMAIL", "support@coordinaite.net").strip().lower(),
+            smtp_host=os.getenv("SMTP_HOST", "smtp.gmail.com").strip(),
+            smtp_port=int(os.getenv("SMTP_PORT", "587")),
+            smtp_username=os.getenv("SMTP_USERNAME") or None,
+            smtp_password=os.getenv("SMTP_PASSWORD") or None,
             app_environment=os.getenv("APP_ENV", "development"),
             jwt_secret_key=os.getenv("JWT_SECRET_KEY", ""),
             jwt_issuer=os.getenv("JWT_ISSUER", "coordinaite"),
@@ -108,4 +129,5 @@ class Settings:
             auth_cookie_samesite=os.getenv("AUTH_COOKIE_SAMESITE", "lax").lower(),
             auth_cookie_path=os.getenv("AUTH_COOKIE_PATH", "/auth"),
             realtime_enabled=os.getenv("REALTIME_ENABLED", "false").lower() == "true",
+            redis_url=os.getenv("REDIS_URL") or None,
         )

@@ -62,3 +62,15 @@ class LoadGameRequest(StrictRequest):
 
 class CheckoutSessionRequest(StrictRequest):
     pass
+
+
+class RefundRequestCreate(StrictRequest):
+    reason: str = Field(min_length=10, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 10:
+            raise ValueError("Please provide a little more detail about the refund request.")
+        return value

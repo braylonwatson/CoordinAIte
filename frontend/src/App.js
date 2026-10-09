@@ -1,6 +1,7 @@
 // App.js
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import BackgroundParticles from "./BackgroundParticles";
+import { OwnerUsersPage, RefundRequestPage } from "./AccountPages";
 
 import { apiFetch, authenticate, AUTH_EXPIRED, closeLivePredictions, restoreSession, setGuestGameToken, signOut } from "./api";
 
@@ -368,7 +369,12 @@ function App() {
     restoreSession().then((data) => {
       if (!mounted) return;
       if (data) {
-        setUser({ user_id: data.user_id, name: data.username, email: data.email });
+        setUser({
+          user_id: data.user_id,
+          name: data.username,
+          email: data.email,
+          is_owner: Boolean(data.is_owner),
+        });
         setIsGuest(false);
         sessionStorage.removeItem("coordinaite_guest");
         setScreen("teamSetup");
@@ -1274,6 +1280,36 @@ function App() {
 
   const tier2Enabled = Boolean(user) && subscription.tier2_access && subscription.tier2_models_available;
 
+  if (screen === "owner") {
+    if (!user?.is_owner) {
+      return (
+        <>
+          <BackgroundParticles />
+          <div style={styles.page}>
+            <div style={styles.container}>
+              <div style={styles.reasonBox}>Owner access is required to view this page.</div>
+              <button style={styles.buttonSecondary} onClick={() => setScreen(teamsSet ? "dashboard" : "teamSetup")}>Back to CoordinAIte</button>
+            </div>
+          </div>
+        </>
+      );
+    }
+    return <><BackgroundParticles /><OwnerUsersPage onBack={() => setScreen(teamsSet ? "dashboard" : "teamSetup")} /></>;
+  }
+
+  if (screen === "refund") {
+    return (
+      <>
+        <BackgroundParticles />
+        <RefundRequestPage
+          user={user}
+          canRequest={Boolean(user && subscription.tier2_access)}
+          onBack={() => setScreen("upgrade")}
+        />
+      </>
+    );
+  }
+
   if (screen === "authChoice") {
     return (
       <>
@@ -1419,6 +1455,11 @@ function App() {
                 </button>
                 {user ? (
                   <>
+                    {user.is_owner && (
+                      <button onClick={() => setScreen("owner")} style={styles.buttonSecondary}>
+                        Users
+                      </button>
+                    )}
                     <button
                       onClick={() => setScreen("history")}
                       style={styles.buttonSecondary}
@@ -1638,6 +1679,15 @@ function App() {
 
                     {user && (
                       <button
+                        onClick={() => setScreen("refund")}
+                        style={styles.buttonSecondary}
+                      >
+                        {subscription.tier2_access ? "Request a refund" : "Refund request status"}
+                      </button>
+                    )}
+
+                    {user && (
+                      <button
                         onClick={fetchSubscriptionStatus}
                         style={styles.buttonSecondary}
                       >
@@ -1773,6 +1823,13 @@ function App() {
               >
                 Upgrade
               </button>
+              {user && (
+                user.is_owner && (
+                  <button onClick={() => setScreen("owner")} style={styles.buttonSecondary}>
+                    Users
+                  </button>
+                )
+              )}
               {user && (
                 <button onClick={() => setScreen("history")} style={styles.buttonSecondary}>
                   History

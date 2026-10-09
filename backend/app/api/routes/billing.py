@@ -29,6 +29,7 @@ SUBSCRIPTION_EVENTS = {
     "customer.subscription.deleted",
     "invoice.payment_failed",
     "invoice.payment_succeeded",
+    "charge.refunded",
 }
 ENDED_STATUSES = {"canceled", "incomplete_expired"}
 
@@ -75,8 +76,15 @@ def reconcile_subscription(user: User, settings: Settings, price=None) -> None:
         stripe_value(sub, "created", 0),
         stripe_value(sub, "id", ""),
     ), default=None)
-    user.stripe_subscription_id = stripe_id(current)
-    sync_user_subscription_fields(user, stripe_value(current, "status"))
+    current_id = stripe_id(current)
+    subscription_id_changed = bool(current_id and current_id != user.stripe_subscription_id)
+    user.stripe_subscription_id = current_id
+    sync_user_subscription_fields(
+        user,
+        stripe_value(current, "status"),
+        current,
+        subscription_id_changed=subscription_id_changed,
+    )
 
 
 @router.get("/me/subscription")
@@ -145,9 +153,13 @@ def create_checkout_session(
 
 
 def process_billing_event(event, db: Session, settings: Settings) -> None:
-    if stripe_value(event, "type") not in SUBSCRIPTION_EVENTS:
+    event_type = stripe_value(event, "type")
+    if event_type not in SUBSCRIPTION_EVENTS:
         return
     obj = stripe_value(stripe_value(event, "data"), "object")
+    if event_type == "charge.refunded":
+        process_external_full_refund(obj, db, settings)
+        return
     customer_id = stripe_id(stripe_value(obj, "customer"))
     if not customer_id:
         return
@@ -158,6 +170,54 @@ def process_billing_event(event, db: Session, settings: Settings) -> None:
     if user:
         reconcile_subscription(user, settings)
         db.commit()
+
+
+def invoice_subscription_id(invoice) -> str | None:
+    direct = stripe_id(stripe_value(invoice, "subscription"))
+    if direct:
+        return direct
+    parent = stripe_value(invoice, "parent")
+    details = stripe_value(parent, "subscription_details")
+    return stripe_id(stripe_value(details, "subscription"))
+
+
+def process_external_full_refund(charge, db: Session, settings: Settings) -> None:
+    """Revoke access if a Tier 2 invoice is fully refunded directly in Stripe."""
+    amount = int(stripe_value(charge, "amount", 0) or 0)
+    refunded = int(stripe_value(charge, "amount_refunded", 0) or 0)
+    if amount <= 0 or refunded < amount:
+        return
+
+    customer_id = stripe_id(stripe_value(charge, "customer"))
+    invoice_id = stripe_id(stripe_value(charge, "invoice"))
+    if not customer_id or not invoice_id:
+        return
+
+    user = (
+        db.query(User)
+        .filter(User.stripe_customer_id == customer_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if not user or not user.stripe_subscription_id:
+        return
+
+    invoice = stripe.Invoice.retrieve(invoice_id, api_key=settings.stripe_secret_key)
+    if invoice_subscription_id(invoice) != user.stripe_subscription_id:
+        return
+    if user.subscription_status in ENDED_STATUSES:
+        return
+
+    canceled = stripe.Subscription.delete(
+        user.stripe_subscription_id,
+        invoice_now=False,
+        prorate=False,
+        api_key=settings.stripe_secret_key,
+        idempotency_key=f"coordinaite-refund-cancel-charge-{stripe_id(charge)}",
+    )
+    sync_user_subscription_fields(user, stripe_value(canceled, "status"), canceled)
+    db.commit()
 
 
 @router.post("/stripe/webhook")

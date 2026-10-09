@@ -1,0 +1,164 @@
+.account-page {
+  position: relative;
+  z-index: 1;
+  width: min(1400px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 34px 0 54px;
+  color: #f4f7f3;
+  font-family: Arial, sans-serif;
+}
+
+.account-page-header,
+.account-panel-heading,
+.refund-request-topline,
+.refund-compose-footer,
+.account-header-actions,
+.account-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.account-page-header {
+  margin-bottom: 22px;
+}
+
+.account-page-header h1 {
+  margin: 2px 0 8px;
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.1;
+}
+
+.account-eyebrow {
+  margin: 0 0 6px;
+  color: #65eb4a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.account-subtitle,
+.account-panel-heading p {
+  max-width: 760px;
+  margin: 0;
+  color: #bec9be;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.account-header-actions { justify-content: flex-end; }
+
+.account-button {
+  min-height: 42px;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform .15s ease, opacity .15s ease, border-color .15s ease;
+}
+
+.account-button:hover:not(:disabled) { transform: translateY(-1px); }
+.account-button:disabled { cursor: wait; opacity: .6; }
+.account-button.primary { border: 1px solid #25eb2c; color: #061006; background: linear-gradient(135deg, #54ed36, #19cd22); }
+.account-button.secondary { border: 1px solid rgba(119, 194, 109, .45); color: #b5ff9f; background: rgba(0, 0, 0, .62); }
+
+.account-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.account-stat,
+.account-panel {
+  border: 1px solid rgba(128, 171, 120, .2);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(21, 31, 21, .96), rgba(5, 8, 5, .97));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .3), 0 0 24px rgba(27, 211, 35, .07);
+}
+
+.account-stat { padding: 16px 18px; }
+.account-stat span { display: block; color: #aab8aa; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.account-stat strong { display: block; margin-top: 9px; color: #f2fff0; font-size: 28px; }
+
+.account-panel { margin-bottom: 18px; padding: 20px; }
+.account-panel-heading { align-items: flex-end; margin-bottom: 16px; }
+.account-panel-heading h2 { margin: 0 0 6px; font-size: 20px; }
+.account-panel-heading p { font-size: 12px; }
+.users-heading { align-items: flex-end; }
+.account-search { width: min(320px, 100%); }
+.account-search input,
+.refund-compose textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(130, 166, 125, .3);
+  border-radius: 11px;
+  padding: 11px 13px;
+  color: #f4f7f3;
+  background: rgba(0, 0, 0, .65);
+  font: inherit;
+}
+.account-search input:focus,
+.refund-compose textarea:focus { outline: 2px solid rgba(69, 220, 51, .35); border-color: #55d83b; }
+
+.account-table-scroll { overflow-x: auto; border: 1px solid rgba(123, 164, 115, .18); border-radius: 13px; }
+.account-table { width: 100%; min-width: 980px; border-collapse: collapse; background: rgba(1, 5, 1, .45); }
+.account-table th { padding: 12px; color: #a9c3a5; font-size: 10px; letter-spacing: .08em; text-align: left; text-transform: uppercase; white-space: nowrap; background: rgba(31, 61, 28, .52); }
+.account-table td { padding: 12px; border-top: 1px solid rgba(115, 155, 108, .12); color: #e0e7df; font-size: 12px; white-space: nowrap; }
+.account-table td strong,
+.account-table td small { display: block; }
+.account-table td small { margin-top: 4px; color: #9cab9a; font-size: 11px; }
+
+.account-status { display: inline-flex; padding: 5px 9px; border-radius: 99px; color: #d6ffcf; background: rgba(35, 174, 49, .16); border: 1px solid rgba(86, 216, 71, .25); font-size: 11px; font-weight: 800; text-transform: capitalize; }
+.status-free, .status-denied { color: #c6c9c4; background: rgba(125, 132, 123, .14); border-color: rgba(150, 157, 148, .2); }
+.status-pending, .status-failed { color: #ffe5a7; background: rgba(186, 135, 26, .14); border-color: rgba(232, 183, 65, .25); }
+.status-processing { color: #c4e4ff; background: rgba(37, 119, 189, .16); border-color: rgba(88, 171, 235, .25); }
+
+.refund-request-list { display: grid; gap: 12px; }
+.refund-request-card { padding: 16px; border: 1px solid rgba(106, 154, 101, .2); border-radius: 14px; background: rgba(0, 0, 0, .42); }
+.refund-request-topline { align-items: flex-start; }
+.refund-request-topline h3 { margin: 0 0 5px; font-size: 15px; }
+.refund-request-topline p { margin: 0; color: #a9b5a7; font-size: 12px; }
+.refund-reason { margin: 14px 0; padding: 13px; border-left: 3px solid #38d72b; border-radius: 6px; background: rgba(25, 74, 25, .2); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.refund-request-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #9eae9c; font-size: 11px; }
+.account-row-actions { justify-content: flex-start; margin-top: 14px; }
+.account-empty { margin: 0; color: #aebbae; font-size: 13px; }
+.account-alert { margin: 0 0 14px; padding: 12px 14px; border-radius: 11px; font-size: 13px; line-height: 1.5; }
+.account-alert.error { border: 1px solid rgba(250, 100, 100, .3); color: #ffbcbc; background: rgba(150, 30, 30, .17); }
+.account-alert.success { border: 1px solid rgba(90, 220, 88, .28); color: #c7ffc2; background: rgba(34, 126, 34, .16); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+.refund-page { width: min(860px, calc(100% - 40px)); padding-top: 8vh; }
+.refund-chat-panel { padding: clamp(18px, 4vw, 30px); }
+.chat-message { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.chat-message > div { min-width: 0; padding: 13px 15px; border: 1px solid rgba(125, 160, 118, .2); border-radius: 13px; background: rgba(0, 0, 0, .42); }
+.chat-message.from-user { flex-direction: row-reverse; }
+.chat-message.from-user > div { background: rgba(28, 83, 29, .25); }
+.chat-message strong { color: #ddffda; font-size: 12px; }
+.chat-message p { margin: 7px 0 0; color: #e1e7df; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-message small { display: block; margin-top: 9px; color: #9fb09d; font-size: 10px; text-transform: capitalize; }
+.chat-avatar { display: grid; flex: 0 0 34px; height: 34px; place-items: center; border: 1px solid rgba(84, 230, 55, .32); border-radius: 50%; color: #a9ff95; background: rgba(35, 147, 37, .18); font-size: 11px; font-weight: 800; }
+.refund-compose { margin-top: 20px; padding-top: 18px; border-top: 1px solid rgba(113, 146, 107, .18); }
+.refund-compose label { display: block; margin-bottom: 9px; color: #d3e3d1; font-size: 13px; font-weight: 700; }
+.refund-compose textarea { min-height: 130px; resize: vertical; line-height: 1.5; }
+.refund-compose-footer { margin-top: 10px; color: #8f9b8d; font-size: 11px; }
+.refund-resolution { margin-top: 14px; padding: 12px 14px; border-radius: 11px; border: 1px solid rgba(84, 204, 60, .23); color: #d5f4cf; background: rgba(35, 97, 31, .18); font-size: 13px; line-height: 1.5; }
+.refund-privacy-note { margin: 18px 2px 0; color: #9aa597; font-size: 11px; line-height: 1.55; }
+
+@media (max-width: 760px) {
+  .account-page { width: min(100% - 28px, 1400px); padding-top: 22px; }
+  .account-page-header, .account-panel-heading, .users-heading { align-items: stretch; flex-direction: column; }
+  .account-header-actions { width: 100%; }
+  .account-header-actions .account-button { flex: 1; }
+  .account-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .account-stat { padding: 13px; }
+  .account-stat strong { font-size: 24px; }
+  .account-panel { padding: 15px; }
+  .account-search { width: 100%; }
+  .refund-request-topline { flex-direction: column; }
+  .account-row-actions { align-items: stretch; flex-direction: column; }
+  .account-row-actions .account-button { width: 100%; }
+  .refund-page { width: min(100% - 28px, 860px); padding-top: 22px; }
+}

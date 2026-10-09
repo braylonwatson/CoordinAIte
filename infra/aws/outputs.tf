@@ -16,5 +16,8 @@ output "release_config" {
     github_role_arn         = aws_iam_role.deploy.arn
     api_url                 = aws_apigatewayv2_api.api.api_endpoint
     frontend_url            = var.frontend_url
+    owner_emails            = var.owner_emails
+    support_email           = var.support_email
+    smtp_username           = var.smtp_username
   }
 }

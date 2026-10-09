@@ -29,6 +29,10 @@ def get_model_bundle(request: Request) -> ModelBundle:
     return request.app.state.model_bundle
 
 
+def get_game_cache(request: Request):
+    return request.app.state.game_cache
+
+
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -61,6 +65,17 @@ def get_current_user(session: AuthSession | None = Depends(get_optional_auth_ses
     if session is None:
         raise unauthorized()
     return session.user
+
+
+def get_owner_user(
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> User:
+    # Owner identity is a deployment allowlist, separate from subscription tier.
+    # This check runs on every protected request; the frontend flag is cosmetic.
+    if user.email.strip().lower() not in settings.owner_emails:
+        raise HTTPException(status_code=403, detail="Owner access required.")
+    return user
 
 
 def get_game_access(
