@@ -3,7 +3,7 @@ from time import perf_counter
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_db, get_game_access, get_model_bundle
+from app.api.dependencies import get_db, get_game_access, get_game_cache, get_model_bundle
 from app.core.security import new_secret
 from app.schemas import GameActionRequest, LogPlayRequest, PredictRequest, TeamRequest
 from app.services.game_sessions import (
@@ -14,6 +14,7 @@ from app.services.game_sessions import (
     GameAccess,
 )
 from app.services.subscriptions import subscription_is_active
+from app.services.game_cache import read_game_tracker
 from game_tracker import ModelBundle
 
 
@@ -75,9 +76,9 @@ def get_state(
     access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
+    cache=Depends(get_game_cache),
 ):
-    game = get_game_session(db, game_id, access)
-    tracker = build_tracker(game, model_bundle)
+    game, tracker = read_game_tracker(db, game_id, access, model_bundle, cache)
     return state_response(game, tracker)
 
 
@@ -160,9 +161,9 @@ def get_pending(
     access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
+    cache=Depends(get_game_cache),
 ):
-    game = get_game_session(db, game_id, access)
-    tracker = build_tracker(game, model_bundle)
+    _, tracker = read_game_tracker(db, game_id, access, model_bundle, cache)
     return tracker.pending_play_context or {}
 
 
@@ -199,9 +200,9 @@ def get_play_log(
     access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
+    cache=Depends(get_game_cache),
 ):
-    game = get_game_session(db, game_id, access)
-    tracker = build_tracker(game, model_bundle)
+    _, tracker = read_game_tracker(db, game_id, access, model_bundle, cache)
     return tracker.play_log
 
 
@@ -231,7 +232,7 @@ def get_summary(
     access: GameAccess = Depends(get_game_access),
     db: Session = Depends(get_db),
     model_bundle: ModelBundle = Depends(get_model_bundle),
+    cache=Depends(get_game_cache),
 ):
-    game = get_game_session(db, game_id, access)
-    tracker = build_tracker(game, model_bundle)
+    _, tracker = read_game_tracker(db, game_id, access, model_bundle, cache)
     return tracker.summary()

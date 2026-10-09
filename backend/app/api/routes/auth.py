@@ -72,9 +72,13 @@ DUMMY_PASSWORD_HASH = hash_password("not-a-real-account-password")
 
 
 @router.get("/me")
-def me(response: Response, user: User = Depends(get_current_user)):
+def me(
+    response: Response,
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
     response.headers["Cache-Control"] = "no-store"
-    return user_response(user)
+    return user_response(user, settings)
 
 
 @router.post("/auth/refresh", dependencies=[Depends(require_cookie_request)])

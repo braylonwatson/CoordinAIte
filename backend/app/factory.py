@@ -2,6 +2,7 @@ from time import perf_counter
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from redis import Redis
 
 from app.api.router import api_router
 from app.core.config import Settings
@@ -34,6 +35,11 @@ def create_app(
     application.state.engine = engine
     application.state.session_factory = build_session_factory(engine)
     application.state.model_bundle = model_bundle or ModelBundle.load()
+    application.state.game_cache = (
+        Redis.from_url(settings.redis_url, socket_connect_timeout=0.15, socket_timeout=0.15,
+                       retry_on_timeout=False)
+        if settings.redis_url else None
+    )
 
     @application.middleware("http")
     async def prevent_account_response_caching(request, call_next):

@@ -34,7 +34,12 @@ export function closeLivePredictions() {
 function rememberLogin(data) {
   accessToken = data.access_token;
   accountId = data.user_id;
-  return { user_id: data.user_id, name: data.username, email: data.email };
+  return {
+    user_id: data.user_id,
+    name: data.username,
+    email: data.email,
+    is_owner: Boolean(data.is_owner),
+  };
 }
 
 async function withRefreshLock(callback) {

@@ -26,13 +26,32 @@ def test_auth_migration_on_fresh_and_existing_database(tmp_path, monkeypatch, ex
     assert "auth_sessions" in inspector.get_table_names()
     assert "guest_token_hash" in {column["name"] for column in inspector.get_columns("game_sessions")}
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0003_auth_sessions"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0004_user_timestamps_refunds"
         if existing_phase_one:
             assert connection.scalar(text("SELECT title FROM saved_games WHERE id = 1")) == "Keep this game"
             assert connection.scalar(text("SELECT user_id FROM game_sessions")) == 1
             assert connection.scalar(text("SELECT password_hash FROM users")) == "existing-hash"
+            assert connection.scalar(text("SELECT created_at FROM users WHERE id = 1")) is None
+        assert "refund_requests" in inspector.get_table_names()
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        assert {
+            "created_at",
+            "updated_at",
+            "last_login_at",
+            "subscription_started_at",
+            "subscription_ended_at",
+            "subscription_status_changed_at",
+        }.issubset(user_columns)
+        refund_columns = {column["name"] for column in inspector.get_columns("refund_requests")}
+        assert {
+            "stripe_customer_id",
+            "stripe_subscription_id",
+            "stripe_refund_status",
+            "reviewed_by_user_id",
+        }.issubset(refund_columns)
     command.downgrade(config, "0002_game_sessions")
     assert "auth_sessions" not in inspect(engine).get_table_names()
+    assert "refund_requests" not in inspect(engine).get_table_names()
     if existing_phase_one:
         with engine.connect() as connection:
             assert connection.scalar(text("SELECT title FROM saved_games WHERE id = 1")) == "Keep this game"

@@ -46,7 +46,7 @@ def main():
                 cursor.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
                 cursor.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(role)))
                 # Keep DDL and the Alembic revision table inaccessible to the API.
-                for table in ("users", "saved_games", "game_sessions", "auth_sessions"):
+                for table in ("users", "saved_games", "game_sessions", "auth_sessions", "refund_requests"):
                     cursor.execute(
                         sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {} TO {}")
                         .format(sql.Identifier(table), sql.Identifier(role))

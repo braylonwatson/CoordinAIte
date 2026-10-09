@@ -20,6 +20,11 @@ locals {
     { name = "DATABASE_SSLMODE", value = "verify-full" },
     { name = "DATABASE_SSLROOTCERT", value = "/app/certs/rds-bundle.pem" },
     { name = "FRONTEND_URL", value = var.frontend_url },
+    { name = "OWNER_EMAILS", value = join(",", var.owner_emails) },
+    { name = "SUPPORT_EMAIL", value = var.support_email },
+    { name = "SMTP_HOST", value = "smtp.gmail.com" },
+    { name = "SMTP_PORT", value = "587" },
+    { name = "SMTP_USERNAME", value = var.smtp_username },
     { name = "CORS_ORIGINS", value = join(",", distinct(concat([var.frontend_url], var.additional_frontend_origins))) },
     { name = "AUTH_COOKIE_SECURE", value = "true" },
     { name = "AUTH_COOKIE_SAMESITE", value = "lax" },
@@ -32,7 +37,10 @@ locals {
       STRIPE_SECRET_KEY     = "stripe_secret_key"
       STRIPE_PRICE_ID_TIER2 = "stripe_price_id_tier2"
       STRIPE_WEBHOOK_SECRET = "stripe_webhook_secret"
-    } : { name = name, valueFrom = "${aws_secretsmanager_secret.application.arn}:${key}::" }
+      SMTP_PASSWORD         = "smtp_password"
+    } : {
+      name = name, valueFrom = "${aws_secretsmanager_secret.application.arn}:${key}::"
+    }
   ]
   logging = {
     logDriver = "awslogs"
@@ -63,7 +71,8 @@ resource "aws_ecs_task_definition" "api" {
     portMappings           = [{ containerPort = 8000, protocol = "tcp" }]
     environment = concat(local.common_environment, [
       { name = "DATABASE_USER", value = "coordinaite_app" },
-      { name = "REALTIME_ENABLED", value = tostring(var.realtime_enabled) }
+      { name = "REALTIME_ENABLED", value = tostring(var.realtime_enabled) },
+      { name = "REDIS_URL", value = var.game_cache_enabled ? "rediss://${aws_elasticache_replication_group.game[0].primary_endpoint_address}:6379/0" : "" }
     ])
     secrets          = local.application_secrets
     logConfiguration = local.logging

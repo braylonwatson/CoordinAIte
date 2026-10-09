@@ -22,13 +22,14 @@ def session_is_active(session: AuthSession | None) -> bool:
     return bool(session and session.revoked_at is None and as_utc(session.expires_at) > utc_now())
 
 
-def user_response(user: User) -> dict:
+def user_response(user: User, settings: Settings) -> dict:
     return {
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
         "tier": user.tier or "free",
         "subscription_status": user.subscription_status,
+        "is_owner": user.email.strip().lower() in settings.owner_emails,
     }
 
 
@@ -36,7 +37,7 @@ def token_response(session: AuthSession, settings: Settings, response: Response)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     return {
-        **user_response(session.user),
+        **user_response(session.user, settings),
         "access_token": create_access_token(session.user_id, session.id, session.expires_at, settings),
         "token_type": "bearer",
         "expires_in": min(settings.access_token_minutes * 60, max(0, int((as_utc(session.expires_at) - utc_now()).total_seconds()))),
@@ -66,6 +67,7 @@ def clear_refresh_cookie(response: Response, settings: Settings) -> None:
 
 
 def begin_session(db: Session, user: User, settings: Settings, response: Response) -> dict:
+    user.last_login_at = utc_now()
     secret = new_secret()
     session = AuthSession(
         id=str(uuid4()),

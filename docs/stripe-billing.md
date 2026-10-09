@@ -97,12 +97,60 @@ handling. Its API URL remains `/api`, proxied to AWS. Continue using
 
 Webhook events: `checkout.session.completed`, `customer.subscription.created`,
 `customer.subscription.updated`, `customer.subscription.deleted`,
-`invoice.payment_failed`, and `invoice.payment_succeeded`.
+`invoice.payment_failed`, `invoice.payment_succeeded`, and `charge.refunded`.
 
 Failures to read Stripe return HTTP 503 so Stripe can retry; they never activate
 an unverified account. Monitor failed deliveries in Stripe Workbench and API
 errors in CloudWatch. This integration reconciles state on every supported
 event instead of keeping an event audit ledger.
+
+## Payment retry policy
+
+The API does not run its own billing retry job. Set retries in Stripe Dashboard
+under **Billing → Revenue recovery → Retries**:
+
+1. Choose a custom retry schedule rather than Smart Retries.
+2. Set exactly one retry, 3 days after the initial failed attempt.
+3. Set the post-retry outcome to **cancel the subscription**.
+
+The first `past_due` state removes Tier 2 access while Stripe waits those three
+days. If the retry succeeds, the webhook reconciles the subscription back to
+`active` and restores access. If it fails, Stripe cancels the subscription and
+access stays at Tier 1. Verify this schedule in the Stripe dashboard because
+Stripe account retry policy is not managed by this repository's API.
+
+## Refund requests
+
+The Tier 2 page provides a request form. Requests are stored in PostgreSQL and
+the API sends the reason, registered email, and account ID to
+`support@coordinaite.net`. The message is sent by the Workspace support mailbox;
+the user's registered address is set as `Reply-To` rather than spoofed as the
+sender. An owner must approve a request from the owner-only Users page.
+
+Approval cancels the Stripe subscription immediately, removes Tier 2 access,
+and refunds the remaining balance of the most recent paid invoice, if one
+exists. If no paid invoice exists, approval cancels access without creating a
+Stripe refund. Stripe API failures leave a failed request for owner retry; if
+subscription cancellation already succeeded, Tier 2 remains revoked. Full
+refunds made directly in Stripe also cancel the matching CoordinAIte Tier 2
+subscription when the `charge.refunded` webhook arrives. Partial refunds do not
+automatically revoke access.
+
+To enable Workspace email notifications, set up the support mailbox before the
+release so ECS can load its password when the new task starts:
+
+1. Turn on 2-Step Verification for `support@coordinaite.net` and create an
+   application password in Google Account security settings.
+2. From the repository root, run `python scripts/configure_support_email.py`.
+   The app password is entered at a hidden prompt and saved into the existing
+   AWS Secrets Manager application secret.
+3. Deploy the backend image. The release task definition injects the password
+   from Secrets Manager; it is never added to source code, `.env`, command
+   arguments, or chat.
+
+Refund request records and Stripe refund IDs are retained in PostgreSQL for
+owner review. Password hashes, refresh credentials, and Stripe customer IDs
+are excluded from the owner users response.
 
 ## Existing $20 subscriptions and Render
 

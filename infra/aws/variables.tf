@@ -18,6 +18,25 @@ variable "frontend_url" {
     error_message = "Supply an HTTPS origin without a path or trailing slash."
   }
 }
+variable "owner_emails" {
+  type        = list(string)
+  default     = ["braylon5watson@gmail.com"]
+  description = "Email addresses allowed to use CoordinAIte's owner-only administration endpoints."
+  validation {
+    condition     = length(var.owner_emails) > 0 && alltrue([for email in var.owner_emails : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", email))])
+    error_message = "Set at least one valid owner email address."
+  }
+}
+variable "support_email" {
+  type        = string
+  default     = "support@coordinaite.net"
+  description = "Google Workspace mailbox that receives in-app refund requests."
+}
+variable "smtp_username" {
+  type        = string
+  default     = "support@coordinaite.net"
+  description = "Authenticated Google Workspace SMTP sender."
+}
 variable "additional_frontend_origins" {
   type        = list(string)
   default     = []
@@ -52,4 +71,13 @@ variable "db_multi_az" {
 variable "db_deletion_protection" {
   type    = bool
   default = true
+}
+variable "game_cache_enabled" {
+  type        = bool
+  default     = false
+  description = "Provision a private, TLS-enabled Valkey cache for versioned game snapshots. Adds recurring cost."
+}
+variable "game_cache_node_type" {
+  type    = string
+  default = "cache.t4g.micro"
 }

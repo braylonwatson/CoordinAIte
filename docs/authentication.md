@@ -20,6 +20,18 @@ per-user state is held inside a worker.
 Subscription rights come from the current database record, not token claims or
 client fields. Changing an account ID in a request cannot change its identity.
 
+Owner-only user and refund endpoints use the `OWNER_EMAILS` deployment
+allowlist. The frontend's owner flag only controls navigation; the API checks
+the current authenticated user's email on every request. Keep the allowlist
+restricted to the creator and explicitly trusted operators.
+
+The owner Users page lists account email/name, current tier and subscription
+status, signup/update/login times, subscription start/end/status-change times,
+and saved-game counts. It does not return password hashes, Stripe customer IDs,
+or saved-game contents. Timestamp columns were not available for older accounts,
+so those historical values remain `NULL` and display as unknown rather than
+showing the migration date as if it were the real event date.
+
 ## Refresh and logout
 
 The refresh credential is an opaque random secret in an HttpOnly, host-only

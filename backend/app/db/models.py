@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -21,6 +21,17 @@ class User(Base):
     subscription_status = Column(String, nullable=True)
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
+    # Timestamp history is nullable for legacy accounts whose original dates
+    # were never recorded. New accounts receive database-generated timestamps.
+    created_at = Column(DateTime(timezone=True), nullable=True, default=utc_now, server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), nullable=True, default=utc_now,
+        onupdate=utc_now, server_default=func.now(),
+    )
+    subscription_started_at = Column(DateTime(timezone=True), nullable=True)
+    subscription_ended_at = Column(DateTime(timezone=True), nullable=True)
+    subscription_status_changed_at = Column(DateTime(timezone=True), nullable=True)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class SavedGame(Base):
@@ -47,6 +58,33 @@ class AuthSession(Base):
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User")
+
+
+class RefundRequest(Base):
+    """A customer refund request awaiting an owner's decision."""
+
+    __tablename__ = "refund_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    reason = Column(Text, nullable=False)
+    status = Column(String(24), nullable=False, default="pending", server_default="pending", index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now())
+    notified_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Snapshot the billing target so a later subscription cannot be refunded
+    # accidentally if the request is reviewed after the account changes plans.
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+    stripe_refund_id = Column(String, nullable=True)
+    stripe_refund_status = Column(String(24), nullable=True)
+    stripe_payment_intent_id = Column(String, nullable=True)
+    refund_amount_cents = Column(Integer, nullable=True)
+    refund_currency = Column(String(3), nullable=True)
+    resolution_message = Column(String(500), nullable=True)
+    user = relationship("User", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by_user_id])
 
 
 class GameSession(Base):
