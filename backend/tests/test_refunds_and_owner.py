@@ -44,7 +44,7 @@ def test_owner_users_endpoint_is_allowlisted_and_does_not_expose_secrets(client,
 
 
 def test_refund_request_requires_active_tier2_and_is_saved(client, app, monkeypatch):
-    account = register(client)
+    account = register(client, "owner@example.com")
     monkeypatch.setattr("app.api.routes.refunds.send_refund_request_email", Mock(return_value=True))
     assert client.post("/me/refund-request", json={"reason": "I would like to request a refund."}).status_code == 403
 
@@ -97,7 +97,7 @@ def test_approval_does_not_touch_a_new_subscription_started_after_request(client
 
 
 def test_refund_request_captures_the_subscription_under_review(client, app):
-    account = register(client)
+    account = register(client, "owner@example.com")
     activate_user(app, subscription="sub_requested")
     response = client.post(
         "/me/refund-request",

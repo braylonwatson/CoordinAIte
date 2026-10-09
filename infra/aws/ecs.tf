@@ -39,7 +39,8 @@ locals {
       STRIPE_WEBHOOK_SECRET = "stripe_webhook_secret"
       SMTP_PASSWORD         = "smtp_password"
     } : {
-      name = name, valueFrom = "${aws_secretsmanager_secret.application.arn}:${key}::"
+      name      = name
+      valueFrom = "${aws_secretsmanager_secret.application.arn}:${key}::"
     }
   ]
   logging = {

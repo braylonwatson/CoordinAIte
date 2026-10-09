@@ -20,7 +20,7 @@ test("owner page loads account and subscription timestamps without exposing priv
 
   render(<OwnerUsersPage onBack={() => {}} />);
   expect(await screen.findByRole("heading", { name: "Users" })).toBeInTheDocument();
-  expect(screen.getByText("coach@example.com")).toBeInTheDocument();
+  expect(await screen.findByText("coach@example.com")).toBeInTheDocument();
   expect(screen.getByText("2", { selector: "td" })).toBeInTheDocument();
   expect(screen.getByText("All users")).toBeInTheDocument();
 });

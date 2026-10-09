@@ -37,7 +37,8 @@ def read_game_tracker(db: Session, game_id: str, access: GameAccess, models: Mod
         raise HTTPException(status_code=404, detail="Game session not found")
 
     key = f"coordinaite:game:v1:{row.id}:{row.version}"
-    if cache is not None:
+    cache_available = cache is not None
+    if cache_available:
         try:
             snapshot = cache.get(key)
             if snapshot is not None:
@@ -49,10 +50,11 @@ def read_game_tracker(db: Session, game_id: str, access: GameAccess, models: Mod
                 )
         except (RedisError, ValueError, TypeError):
             logger.warning("Game snapshot cache unavailable; reading PostgreSQL", exc_info=True)
+            cache_available = False
 
     game = get_game_session(db, game_id, access)
     tracker = build_tracker(game, models)
-    if cache is not None:
+    if cache_available:
         try:
             cache.setex(
                 f"coordinaite:game:v1:{game.id}:{game.version}",
