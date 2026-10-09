@@ -31,3 +31,7 @@ __pycache__/
 infra/aws/backend.hcl
 infra/aws/terraform.tfvars
 release-config.json
+
+# Downloaded training snapshots and intermediate candidate models
+training_runs/
+training_data/

@@ -59,3 +59,14 @@ workflow. Cloud resources have not been provisioned by this code change.
 See [the latency rollout guide](docs/low-latency.md) for numeric-array inference,
 the optional authenticated WebSocket endpoint, AWS configuration, benchmarks,
 and rollback instructions. Live transport is disabled by default.
+
+## Model training data
+
+The model artifacts in this branch were refreshed on October 8, 2026 using
+2022–2025 regular-season/postseason play-by-play and the 64 completed 2026
+games available through October 5 (Weeks 1–4). The 2021 season is excluded.
+See [the training guide and evaluation](docs/model-training.md) and
+[`backend/training_metadata.json`](backend/training_metadata.json) for exact
+counts, source checksums, validation results, and refresh commands. Training
+and committing these files do not update a running backend; an image release
+is required.

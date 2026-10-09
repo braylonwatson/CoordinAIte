@@ -25,6 +25,7 @@ COPY alembic ./alembic
 COPY alembic.ini main.py game_tracker.py model_wrappers.py feature_builder.py ./
 COPY defense_strategy_engine.py recommendation_engine.py ./
 COPY *.pkl ./
+COPY training_metadata.json ./
 COPY scripts ./scripts
 
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
